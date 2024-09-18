@@ -17,3 +17,13 @@ pub enum GameError {
     #[msg("The game is single player.")]
     GameIsSinglePlayer,
 }
+
+#[error_code]
+pub enum UnitError {
+    #[msg("This is not your tile.")]
+    NotYourTile,
+    #[msg("No units to move.")]
+    NoUnitsToMove,
+    #[msg("Destination tile is not adjacent")]
+    InvalidMovement,
+}
