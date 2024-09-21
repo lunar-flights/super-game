@@ -46,7 +46,6 @@ pub fn create_game(
     game.is_multiplayer = is_multiplayer;
     game.map_size = map_size;
 
-    // Determine total players and number of bots
     let total_players = game.max_players as usize;
     let humans = if game.is_multiplayer { 2 } else { 1 };
     let num_bots = total_players - humans;
@@ -55,7 +54,6 @@ pub fn create_game(
 
     let mut player_infos = Vec::with_capacity(total_players);
 
-    // Game creator is always the first player
     game.players[0] = Some(PlayerInfo {
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
@@ -75,50 +73,60 @@ pub fn create_game(
         player_infos.push(bot_info);
     }
 
-    let num_tiles = match game.map_size {
-        MapSize::Small => 37,
-        MapSize::Large => 57,
-    };
-
-    game.tiles = initialize_tiles(&game.key(), num_tiles, &player_infos, &game.map_size)?;
+    game.tiles = initialize_tiles(&game.key(), &player_infos, &game.map_size)?;
 
     Ok(())
 }
 
 fn initialize_tiles(
     game_pubkey: &Pubkey,
-    num_tiles: usize,
     player_infos: &[PlayerInfo],
     map_size: &MapSize,
-) -> Result<Vec<Tile>> {
-    let mut tiles = Vec::with_capacity(num_tiles);
+) -> Result<Vec<Vec<Option<Tile>>>> {
+    let layout = Game::get_map_layout(map_size.clone());
+    let grid_size = layout.len();
+
+    // Initialize empty grid
+    let mut grid: Vec<Vec<Option<Tile>>> = vec![vec![None; grid_size]; grid_size];
+
     let clock = Clock::get().unwrap();
     let slot = clock.slot;
 
     let base_positions = get_base_positions(map_size);
 
-    // Create a mapping from tile index to player info
     let mut base_tile_to_player = std::collections::HashMap::new();
-    for (player_info, &tile_index) in player_infos.iter().zip(base_positions.iter()) {
-        base_tile_to_player.insert(tile_index, player_info);
+    for (player_info, &(row, col)) in player_infos.iter().zip(base_positions.iter()) {
+        base_tile_to_player.insert((row, col), player_info);
     }
 
-    for tile_index in 0..num_tiles {
-        let level = get_random_tile_level(game_pubkey, tile_index, slot);
-        let mut tile = Tile::new(level);
+    for (row_index, &tiles_in_row) in layout.iter().enumerate() {
+        let tiles_in_row = tiles_in_row as usize;
+        let empty_spaces = (grid_size - tiles_in_row) / 2;
 
-        if let Some(player_info) = base_tile_to_player.get(&tile_index) {
-            tile.owner = player_info.pubkey;
-            tile.level = 1;
-            tile.mutants = 0;
-            tile.units.infantry = 5;
-            tile.is_base = true;
+        for col_index in 0..tiles_in_row {
+            let adjusted_col = col_index + empty_spaces;
+
+            let tile_index = row_index * grid_size + adjusted_col;
+            let level = get_random_tile_level(game_pubkey, tile_index, slot);
+            let mut tile = Tile::new(level);
+
+            // initalize base
+            if let Some(player_info) = base_tile_to_player.get(&(row_index, adjusted_col)) {
+                tile.owner = player_info.pubkey;
+                tile.level = 1;
+                tile.units = Some(Units {
+                    unit_type: UnitType::Infantry,
+                    quantity: 5,
+                    stamina: 1,
+                });
+                tile.is_base = true;
+            }
+
+            grid[row_index][adjusted_col] = Some(tile);
         }
-
-        tiles.push(tile);
     }
 
-    Ok(tiles)
+    Ok(grid)
 }
 
 // 40% chance of level 1, 40% chance of level 2, 20% chance of level 3
@@ -140,9 +148,9 @@ fn get_random_tile_level(game_pubkey: &Pubkey, tile_index: usize, slot: u64) -> 
     }
 }
 
-fn get_base_positions(map_size: &MapSize) -> Vec<usize> {
+fn get_base_positions(map_size: &MapSize) -> Vec<(usize, usize)> {
     match map_size {
-        MapSize::Large => vec![1, 24, 32, 55],
-        MapSize::Small => vec![1, 35], // vec![1, 15, 21, 35],
+        MapSize::Small => vec![(1, 1), (1, 5), (5, 1), (5, 5)],
+        MapSize::Large => vec![(0, 4), (4, 0), (4, 8), (8, 4)],
     }
 }

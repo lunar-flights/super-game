@@ -10,7 +10,10 @@ describe("super-game", () => {
   const program = anchor.workspace.SuperGame as Program<SuperGame>;
 
   it("Initializes the program", async () => {
-    const [superStatePda] = await anchor.web3.PublicKey.findProgramAddressSync([Buffer.from("SUPER")], program.programId);
+    const [superStatePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("SUPER")],
+      program.programId
+    );
 
     await program.methods.initializeProgram().rpc();
     const superState = await program.account.superState.fetch(superStatePda);
@@ -41,7 +44,10 @@ describe("super-game", () => {
   it("Creates a game", async () => {
     const player = provider.wallet.publicKey;
 
-    const [superStatePda] = await anchor.web3.PublicKey.findProgramAddressSync([Buffer.from("SUPER")], program.programId);
+    const [superStatePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("SUPER")],
+      program.programId
+    );
 
     const [playerProfilePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("PROFILE"), player.toBuffer()],
@@ -72,22 +78,48 @@ describe("super-game", () => {
     expect(game.status).deep.equal({ live: {} });
     expect(game.isMultiplayer).to.be.false;
     expect(game.mapSize).deep.equal({ small: {} });
-    expect(game.tiles.length).to.equal(37);
+    expect(game.tiles.length).to.equal(7);
     console.log(game);
     console.log(game.tiles[1]);
   });
 
-  it("Moves a unit from one tile to an adjacent tile", async () => {
+  it("Fails to move a unit with 1 stamina to diagonal tile", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = {game_id: 0};
+    const gameData = { game_id: 0 };
 
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
     );
 
+    try {
+      // try to move unit with 1 stamina to diagonal tile (different row index and col index)
+      // (1, 1) -> (2, 2)
+      await program.methods
+        .moveUnit(1, 1, 2, 2)
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("InvalidMovement");
+    }
+  });
+
+  it("Moves a unit from one tile to an adjacent tile", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    // successfully move unit from (1, 1) to (2, 1)
+    // adjacent tile in the next row
     await program.methods
-      .moveUnit(1, 2)
+      .moveUnit(1, 1, 2, 1)
       .accounts({
         game: gamePda,
         player: player,
@@ -95,8 +127,11 @@ describe("super-game", () => {
       .rpc();
 
     const updatedGame = await program.account.game.fetch(gamePda);
-    expect(updatedGame.tiles[2].units.infantry).to.equal(5);
-    expect(updatedGame.tiles[1].units.infantry).to.equal(0);
-});
+    expect(updatedGame.tiles[2][1].units.quantity).to.equal(5);
+    expect(updatedGame.tiles[2][1].units.unitType).to.deep.equal({ infantry: {} });
+    // expect(updatedGame.tiles[2][1].owner.toBase58()).to.be.equal(player.toBase58());
+    expect(updatedGame.tiles[2][1].units.stamina).to.equal(0);
 
+    expect(updatedGame.tiles[1][1].units).to.be.null;
+  });
 });

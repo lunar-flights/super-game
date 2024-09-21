@@ -26,4 +26,8 @@ pub enum UnitError {
     NoUnitsToMove,
     #[msg("Destination tile is not adjacent")]
     InvalidMovement,
+    #[msg("Not enough stamina.")]
+    NotEnoughStamina,
+    #[msg("Invalid tile.")]
+    InvalidTile,
 }

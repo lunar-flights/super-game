@@ -1,5 +1,5 @@
 use crate::errors::UnitError;
-use crate::states::{Game, MapSize, Units};
+use crate::states::{Game, Tile, Units};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
@@ -10,74 +10,96 @@ pub struct MoveUnit<'info> {
     pub player: Signer<'info>,
 }
 
-pub fn move_unit(ctx: Context<MoveUnit>, from_tile_index: u8, to_tile_index: u8) -> Result<()> {
+pub fn move_unit(
+    ctx: Context<MoveUnit>,
+    from_row: usize,
+    from_col: usize,
+    to_row: usize,
+    to_col: usize,
+) -> Result<()> {
     let game = &mut ctx.accounts.game;
     let player_pubkey = ctx.accounts.player.key();
 
-    let mut from_tile = *game
-        .tiles
-        .get(from_tile_index as usize)
-        .ok_or(ProgramError::InvalidArgument)?;
-    let mut to_tile = *game
-        .tiles
-        .get(to_tile_index as usize)
-        .ok_or(ProgramError::InvalidArgument)?;
+    // Check if positions are within bounds
+    if from_row >= game.tiles.len()
+        || from_col >= game.tiles[0].len()
+        || to_row >= game.tiles.len()
+        || to_col >= game.tiles[0].len()
+    {
+        return Err(ProgramError::InvalidArgument.into());
+    }
+
+    let from_tile_option = game.tiles[from_row][from_col];
+    let to_tile_option = game.tiles[to_row][to_col];
+
+    let mut from_tile = match from_tile_option {
+        Some(tile) => tile,
+        None => return Err(UnitError::InvalidTile.into()),
+    };
+
+    let mut to_tile = match to_tile_option {
+        Some(tile) => tile,
+        None => return Err(UnitError::InvalidTile.into()),
+    };
 
     if from_tile.owner != player_pubkey {
-        // return err!(UnitError::NotYourTile);
+        return Err(UnitError::NotYourTile.into());
     }
 
-    if from_tile.units.infantry == 0 && from_tile.units.tank == 0 && from_tile.units.plane == 0 {
-        return err!(UnitError::NoUnitsToMove);
+    let from_units = match from_tile.units {
+        Some(units) => units,
+        None => return Err(UnitError::NoUnitsToMove.into()),
+    };
+
+    if !is_valid_move(
+        &game.tiles,
+        from_row,
+        from_col,
+        to_row,
+        to_col,
+        from_units.stamina,
+    ) {
+        return Err(UnitError::InvalidMovement.into());
     }
 
-    if !is_adjacent(game.map_size.clone(), from_tile_index, to_tile_index) {
-        return err!(UnitError::InvalidMovement);
-    }
+    // Move units to destination tile
+    to_tile.units = Some(Units {
+        stamina: from_units.stamina - 1, // FIX ME
+        ..from_units
+    });
+    // Remove units from the initial tile
+    from_tile.units = None;
 
-    to_tile.units.infantry += from_tile.units.infantry;
-    to_tile.units.tank += from_tile.units.tank;
-    to_tile.units.plane += from_tile.units.plane;
+    to_tile.owner = from_tile.owner;
 
-    from_tile.units = Units::default();
-
-    game.tiles[from_tile_index as usize] = from_tile;
-    game.tiles[to_tile_index as usize] = to_tile;
+    game.tiles[from_row][from_col] = Some(from_tile);
+    game.tiles[to_row][to_col] = Some(to_tile);
 
     Ok(())
 }
 
-fn is_adjacent(map_size: MapSize, from_tile: u8, to_tile: u8) -> bool {
-    let small_map: &[u8] = &[3, 5, 7, 7, 7, 5, 3];
-    let large_map: &[u8] = &[3, 5, 7, 9, 9, 9, 7, 5, 3];
-    let tile_counts_per_row = match map_size {
-        MapSize::Small => small_map,
-        MapSize::Large => large_map,
-    };
-
-    let (from_row, from_col) = get_tile_coordinates(tile_counts_per_row, from_tile);
-    let (to_row, to_col) = get_tile_coordinates(tile_counts_per_row, to_tile);
-
-    let row_diff = (from_row as i8 - to_row as i8).abs();
-    let col_diff = (from_col as i8 - to_col as i8).abs();
-
-    row_diff <= 1 && col_diff <= 1
-}
-
-fn get_tile_coordinates(tile_counts_per_row: &[u8], tile_index: u8) -> (usize, usize) {
-    let mut index = 0;
-    for (row, &tiles_in_row) in tile_counts_per_row.iter().enumerate() {
-        let max_tiles_in_row = *tile_counts_per_row.iter().max().unwrap();
-
-        // add offset due to diamond-shaped map
-        let offset = (max_tiles_in_row - tiles_in_row) / 2;
-
-        if tile_index >= index && tile_index < index + tiles_in_row {
-            let col = tile_index - index;
-            return (row, (col + offset) as usize);
-        }
-        index += tiles_in_row;
+fn is_valid_move(
+    grid: &[Vec<Option<Tile>>],
+    from_row: usize,
+    from_col: usize,
+    to_row: usize,
+    to_col: usize,
+    stamina: u8,
+) -> bool {
+    if to_row >= grid.len() || to_col >= grid[0].len() {
+        return false;
     }
-    // out of bounds
-    (0, 0)
+
+    if grid[to_row][to_col].is_none() {
+        return false;
+    }
+
+    let row_diff = (from_row as isize - to_row as isize).unsigned_abs();
+    let col_diff = (from_col as isize - to_col as isize).unsigned_abs();
+
+    // diagonal movement costs 2 stamina, normal movement costs 1
+    let diagonal_move = row_diff == 1 && col_diff == 1;
+    let move_cost = if diagonal_move { 2 } else { 1 };
+
+    (row_diff <= 1 && col_diff <= 1) && stamina >= move_cost
 }

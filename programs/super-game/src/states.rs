@@ -50,23 +50,49 @@ pub struct Game {
     pub max_players: u8,
     pub is_multiplayer: bool,
     pub map_size: MapSize,
-    pub tiles: Vec<Tile>,
+    pub tiles: Vec<Vec<Option<Tile>>>,
 }
 
 impl Game {
     pub const MAX_PLAYERS: usize = 4;
-    pub const MAX_TILES: usize = 57;
+    pub const MAX_TILES: usize = 81;
 
     // ~ 2119 bytes
-    pub const LEN: usize =
-        8 + 4 + 32 + (Self::MAX_PLAYERS * 33) + 1 + 1 + 1 + 1 + (4 + (Self::MAX_TILES * Tile::LEN));
+    pub const LEN: usize = 5000;
+    // 8 + 4 + 32 + (Self::MAX_PLAYERS * 33) + 1 + 1 + 1 + 1 + (4 + (Self::MAX_TILES * Tile::LEN));
+
+    pub fn get_map_layout(map_size: MapSize) -> Vec<u8> {
+        match map_size {
+            MapSize::Small => vec![3, 5, 7, 7, 7, 5, 3],
+            MapSize::Large => vec![3, 5, 7, 9, 9, 9, 7, 5, 3],
+        }
+    }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
 pub struct Units {
-    pub infantry: u8,
-    pub tank: u8,
-    pub plane: u8,
+    pub unit_type: UnitType,
+    pub quantity: u16,
+    pub stamina: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq)]
+pub enum UnitType {
+    Infantry,
+    Tank,
+    Plane,
+    Mutants, // neutral
+}
+
+impl UnitType {
+    pub fn max_stamina(&self) -> u8 {
+        match self {
+            UnitType::Infantry => 1,
+            UnitType::Tank => 3,
+            UnitType::Plane => 5,
+            UnitType::Mutants => 0,
+        }
+    }
 }
 
 impl Units {
@@ -77,8 +103,7 @@ impl Units {
 pub struct Tile {
     pub owner: Pubkey,
     pub level: u8,
-    pub mutants: u8,
-    pub units: Units,
+    pub units: Option<Units>,
     pub buildings: u8,
     pub is_base: bool,
 }
@@ -91,8 +116,11 @@ impl Tile {
         Self {
             owner: Pubkey::default(),
             level,
-            mutants,
-            units: Units::default(),
+            units: Some(Units {
+                unit_type: UnitType::Mutants,
+                quantity: mutants,
+                stamina: 0,
+            }),
             buildings: 0,
             is_base: false,
         }
@@ -107,16 +135,20 @@ impl Tile {
         }
     }
 
+    pub fn is_neutral(&self) -> bool {
+        self.owner == Pubkey::default()
+    }
+
     pub fn get_defense_bonus(&self) -> u8 {
         // Mutants don't get any bonus
-        if self.mutants > 0 {
+        if self.is_neutral() {
             0
         } else {
             self.level
         }
     }
 
-    pub fn default_mutants(level: u8) -> u8 {
+    pub fn default_mutants(level: u8) -> u16 {
         match level {
             1 => 1,
             2 => 3,

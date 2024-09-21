@@ -32,7 +32,19 @@ pub mod super_game {
         instructions::create_game::create_game(ctx, max_players, is_multiplayer, map_size)
     }
 
-    pub fn move_unit(ctx: Context<MoveUnit>, from_tile_index: u8, to_tile_index: u8) -> Result<()> {
-        instructions::move_unit(ctx, from_tile_index, to_tile_index)
+    pub fn move_unit(
+        ctx: Context<MoveUnit>,
+        from_row: u8,
+        from_col: u8,
+        to_row: u8,
+        to_col: u8,
+    ) -> Result<()> {
+        instructions::move_unit(
+            ctx,
+            from_row.into(),
+            from_col.into(),
+            to_row.into(),
+            to_col.into(),
+        )
     }
 }
