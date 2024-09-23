@@ -45,6 +45,14 @@ pub fn create_game(
     game.max_players = max_players;
     game.is_multiplayer = is_multiplayer;
     game.map_size = map_size;
+    game.round = 1;
+    game.current_player_index = 0;
+    game.turn_time_limit = 60;
+    game.turn_timestamp = if is_multiplayer {
+        Clock::get().unwrap().unix_timestamp as u64
+    } else {
+        0
+    };
 
     let total_players = game.max_players as usize;
     let humans = if game.is_multiplayer { 2 } else { 1 };

@@ -9,6 +9,8 @@ describe("super-game", () => {
 
   const program = anchor.workspace.SuperGame as Program<SuperGame>;
 
+  let timestamp = 0;
+
   it("Initializes the program", async () => {
     const [superStatePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("SUPER")],
@@ -127,11 +129,36 @@ describe("super-game", () => {
       .rpc();
 
     const updatedGame = await program.account.game.fetch(gamePda);
+    timestamp = updatedGame.turnTimestamp.toNumber();
     expect(updatedGame.tiles[2][1].units.quantity).to.equal(5);
     expect(updatedGame.tiles[2][1].units.unitType).to.deep.equal({ infantry: {} });
     // expect(updatedGame.tiles[2][1].owner.toBase58()).to.be.equal(player.toBase58());
     expect(updatedGame.tiles[2][1].units.stamina).to.equal(0);
 
     expect(updatedGame.tiles[1][1].units).to.be.null;
+  });
+
+  it("End turn", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    await program.methods
+      .endTurn()
+      .accounts({
+        game: gamePda,
+        player: player,
+      })
+      .rpc();
+
+    const updatedGame = await program.account.game.fetch(gamePda);
+    expect(updatedGame.currentPlayerIndex).to.equal(0);
+    expect(updatedGame.turnTimestamp.toNumber()).to.be.greaterThan(timestamp);
+    expect(updatedGame.round).to.equal(2);
+    // restored stamina of unit who moved before
+    expect(updatedGame.tiles[2][1].units.stamina).to.equal(1);
   });
 });

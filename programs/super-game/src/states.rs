@@ -50,6 +50,10 @@ pub struct Game {
     pub max_players: u8,
     pub is_multiplayer: bool,
     pub map_size: MapSize,
+    pub round: u32,
+    pub current_player_index: u8,
+    pub turn_timestamp: u64,
+    pub turn_time_limit: u64,
     pub tiles: Vec<Vec<Option<Tile>>>,
 }
 

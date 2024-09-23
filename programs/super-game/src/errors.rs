@@ -16,6 +16,10 @@ pub enum GameError {
     InvalidMapSize,
     #[msg("The game is single player.")]
     GameIsSinglePlayer,
+    #[msg("Invalid player.")]
+    InvalidPlayer,
+    #[msg("Not your turn.")]
+    NotYourTurn,
 }
 
 #[error_code]

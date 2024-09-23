@@ -47,4 +47,8 @@ pub mod super_game {
             to_col.into(),
         )
     }
+
+    pub fn end_turn(ctx: Context<EndTurn>) -> Result<()> {
+        instructions::end_turn::end_turn(ctx)
+    }
 }
