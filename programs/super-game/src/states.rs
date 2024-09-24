@@ -97,6 +97,24 @@ impl UnitType {
             UnitType::Mutants => 0,
         }
     }
+
+    pub fn strength(&self) -> u8 {
+        match self {
+            UnitType::Infantry => 1,
+            UnitType::Tank => 3,
+            UnitType::Plane => 4,
+            UnitType::Mutants => 1,
+        }
+    }
+
+    pub fn cost(&self) -> u8 {
+        match self {
+            UnitType::Infantry => 1,
+            UnitType::Tank => 3,
+            UnitType::Plane => 5,
+            UnitType::Mutants => 0, // can't be purchased
+        }
+    }
 }
 
 impl Units {

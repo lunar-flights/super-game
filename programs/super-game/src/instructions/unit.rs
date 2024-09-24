@@ -1,4 +1,4 @@
-use crate::errors::UnitError;
+use crate::errors::{GameError, UnitError};
 use crate::states::{Game, Tile, Units};
 use anchor_lang::prelude::*;
 
@@ -26,7 +26,7 @@ pub fn move_unit(
         || to_row >= game.tiles.len()
         || to_col >= game.tiles[0].len()
     {
-        return Err(ProgramError::InvalidArgument.into());
+        return err!(GameError::OutOfBounds);
     }
 
     let from_tile_option = game.tiles[from_row][from_col];
@@ -34,43 +34,88 @@ pub fn move_unit(
 
     let mut from_tile = match from_tile_option {
         Some(tile) => tile,
-        None => return Err(UnitError::InvalidTile.into()),
+        None => return err!(UnitError::InvalidTile),
     };
 
     let mut to_tile = match to_tile_option {
         Some(tile) => tile,
-        None => return Err(UnitError::InvalidTile.into()),
+        None => return err!(UnitError::InvalidTile),
     };
 
     if from_tile.owner != player_pubkey {
-        return Err(UnitError::NotYourTile.into());
+        return err!(UnitError::NotYourTile);
     }
 
     let from_units = match from_tile.units {
         Some(units) => units,
-        None => return Err(UnitError::NoUnitsToMove.into()),
+        None => return err!(UnitError::NoUnitsToMove),
     };
 
-    if !is_valid_move(
-        &game.tiles,
-        from_row,
-        from_col,
-        to_row,
-        to_col,
-        from_units.stamina,
-    ) {
-        return Err(UnitError::InvalidMovement.into());
+    // diagonal moves cost 2 stamina, vertical/horizontal - 1 stamina
+    let row_diff = (from_row as isize - to_row as isize).unsigned_abs();
+    let col_diff = (from_col as isize - to_col as isize).unsigned_abs();
+    let diagonal_move = row_diff == 1 && col_diff == 1;
+    let move_cost = if diagonal_move { 2 } else { 1 };
+
+    if !is_valid_move(&game.tiles, from_row, from_col, to_row, to_col) {
+        return err!(UnitError::InvalidMovement);
     }
 
-    // Move units to destination tile
-    to_tile.units = Some(Units {
-        stamina: from_units.stamina - 1, // FIX ME
-        ..from_units
-    });
-    // Remove units from the initial tile
-    from_tile.units = None;
+    if from_units.stamina < move_cost {
+        return err!(UnitError::NotEnoughStamina);
+    }
 
-    to_tile.owner = from_tile.owner;
+    // Here we have 4 scenarios:
+    // 1) Destination tile belongs to player and it has units of the same type - units get merged
+    // 2) Destination tile belongs to player, but it has different unit type.
+    //    2a) They change positions (swap units between tiles) if both have enough stamina
+    //    2b) Otherwise error that tile is occupied by other unit type.
+    // 3) Destination tile belongs to enemy - attack logic applied
+    // 4) Destination tile is not occupied by other units - move unit normally, change tile owner if needed.
+    if let Some(to_units) = &to_tile.units.clone() {
+        if to_tile.owner == player_pubkey {
+            // 1) Destination tile is friendly & occupied by same unit type, merge them
+            if from_units.unit_type == to_units.unit_type {
+                let new_quantity = from_units.quantity + to_units.quantity;
+                let new_stamina = (from_units.stamina - move_cost).min(to_units.stamina);
+                let merged_units = Units {
+                    unit_type: from_units.unit_type,
+                    quantity: new_quantity,
+                    stamina: new_stamina,
+                };
+                to_tile.units = Some(merged_units);
+                from_tile.units = None;
+            } else {
+                // 2a) Units of different types, try to swap
+                if from_units.stamina >= move_cost && to_units.stamina >= move_cost {
+                    let mut from_units_moved = from_units;
+                    let mut to_units_moved = *to_units;
+
+                    from_units_moved.stamina -= move_cost;
+                    to_units_moved.stamina -= move_cost;
+
+                    from_tile.units = Some(to_units_moved);
+                    to_tile.units = Some(from_units_moved);
+                } else {
+                    // 2b) Units in the destination tile don't have enough of stamina to swap positions
+                    return err!(UnitError::TileOccupiedByOtherUnitType);
+                }
+            }
+        } else {
+            // 3) TODO: attack tile
+            return err!(UnitError::TileOccupiedByEnemy);
+        }
+    } else {
+        // 4) Destination tile is unoccupied, move units normally
+        let moved_units = Units {
+            unit_type: from_units.unit_type,
+            quantity: from_units.quantity,
+            stamina: from_units.stamina - move_cost,
+        };
+        to_tile.units = Some(moved_units);
+        from_tile.units = None;
+        to_tile.owner = from_tile.owner;
+    }
 
     game.tiles[from_row][from_col] = Some(from_tile);
     game.tiles[to_row][to_col] = Some(to_tile);
@@ -84,7 +129,6 @@ fn is_valid_move(
     from_col: usize,
     to_row: usize,
     to_col: usize,
-    stamina: u8,
 ) -> bool {
     if to_row >= grid.len() || to_col >= grid[0].len() {
         return false;
@@ -97,9 +141,7 @@ fn is_valid_move(
     let row_diff = (from_row as isize - to_row as isize).unsigned_abs();
     let col_diff = (from_col as isize - to_col as isize).unsigned_abs();
 
-    // diagonal movement costs 2 stamina, normal movement costs 1
-    let diagonal_move = row_diff == 1 && col_diff == 1;
-    let move_cost = if diagonal_move { 2 } else { 1 };
-
-    (row_diff <= 1 && col_diff <= 1) && stamina >= move_cost
+    // Move is valid if the target tile is adjacent, including diagonals
+    // stamina check is implemented directly in move_unit
+    row_diff <= 1 && col_diff <= 1
 }

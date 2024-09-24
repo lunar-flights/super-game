@@ -105,7 +105,7 @@ describe("super-game", () => {
         })
         .rpc();
     } catch (error) {
-      expect(error.error.errorCode.code).to.equal("InvalidMovement");
+      expect(error.error.errorCode.code).to.equal("NotEnoughStamina");
     }
   });
 
