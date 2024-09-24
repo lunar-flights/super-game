@@ -81,8 +81,6 @@ describe("super-game", () => {
     expect(game.isMultiplayer).to.be.false;
     expect(game.mapSize).deep.equal({ small: {} });
     expect(game.tiles.length).to.equal(7);
-    console.log(game);
-    console.log(game.tiles[1]);
   });
 
   it("Fails to move a unit with 1 stamina to diagonal tile", async () => {
@@ -118,6 +116,8 @@ describe("super-game", () => {
       program.programId
     );
 
+    const initialGameState = await program.account.game.fetch(gamePda);
+
     // successfully move unit from (1, 1) to (2, 1)
     // adjacent tile in the next row
     await program.methods
@@ -128,14 +128,17 @@ describe("super-game", () => {
       })
       .rpc();
 
-    const updatedGame = await program.account.game.fetch(gamePda);
-    timestamp = updatedGame.turnTimestamp.toNumber();
-    expect(updatedGame.tiles[2][1].units.quantity).to.equal(5);
-    expect(updatedGame.tiles[2][1].units.unitType).to.deep.equal({ infantry: {} });
-    // expect(updatedGame.tiles[2][1].owner.toBase58()).to.be.equal(player.toBase58());
-    expect(updatedGame.tiles[2][1].units.stamina).to.equal(0);
+    const updatedGameState = await program.account.game.fetch(gamePda);
+    timestamp = updatedGameState.turnTimestamp.toNumber();
+    // some units died during attack on neutral tile
+    expect(updatedGameState.tiles[2][1].units.quantity).to.equal(
+      initialGameState.tiles[1][1].units.quantity - initialGameState.tiles[2][1].units.quantity
+    );
+    expect(updatedGameState.tiles[2][1].units.unitType).to.deep.equal({ infantry: {} });
+    expect(updatedGameState.tiles[2][1].owner.toBase58()).to.be.equal(player.toBase58());
+    expect(updatedGameState.tiles[2][1].units.stamina).to.equal(0);
 
-    expect(updatedGame.tiles[1][1].units).to.be.null;
+    expect(updatedGameState.tiles[1][1].units).to.be.null;
   });
 
   it("End turn", async () => {

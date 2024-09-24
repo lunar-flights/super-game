@@ -102,8 +102,77 @@ pub fn move_unit(
                 }
             }
         } else {
-            // 3) TODO: attack tile
-            return err!(UnitError::TileOccupiedByEnemy);
+            let attacker_strength =
+                from_units.quantity as u32 * from_units.unit_type.strength() as u32;
+
+            // Tile defense bonus applied before the attack
+            let defense_bonus = to_tile.get_defense_bonus() as u32;
+            let adjusted_attacker_strength = attacker_strength.saturating_sub(defense_bonus);
+
+            if adjusted_attacker_strength == 0 {
+                from_tile.units = None;
+
+                game.tiles[from_row][from_col] = Some(from_tile);
+                game.tiles[to_row][to_col] = Some(to_tile);
+                return Ok(());
+            }
+
+            let defender_strength = to_units.quantity as u32 * to_units.unit_type.strength() as u32;
+
+            if adjusted_attacker_strength == defender_strength {
+                from_tile.units = None;
+                to_tile.units = None;
+
+                game.tiles[from_row][from_col] = Some(from_tile);
+                game.tiles[to_row][to_col] = Some(to_tile);
+
+                return Ok(());
+            } else if adjusted_attacker_strength < defender_strength {
+                from_tile.units = None;
+
+                // Calculate the damage taken by defender
+                let remaining_defender_strength = defender_strength - adjusted_attacker_strength;
+
+                let unit_strength = to_units.unit_type.strength() as u32;
+                let mut remaining_defender_quantity = remaining_defender_strength / unit_strength;
+                if remaining_defender_strength % unit_strength != 0 {
+                    remaining_defender_quantity += 1;
+                }
+                to_tile.units = Some(Units {
+                    unit_type: to_units.unit_type,
+                    quantity: remaining_defender_quantity as u16,
+                    stamina: to_units.stamina,
+                });
+
+                game.tiles[from_row][from_col] = Some(from_tile);
+                game.tiles[to_row][to_col] = Some(to_tile);
+
+                return Ok(());
+            } else {
+                // attacker wins
+                to_tile.units = None;
+
+                let remaining_attacker_strength = adjusted_attacker_strength - defender_strength;
+                let unit_strength = from_units.unit_type.strength() as u32;
+                let mut remaining_attacker_quantity = remaining_attacker_strength / unit_strength;
+                if remaining_attacker_strength % unit_strength != 0 {
+                    remaining_attacker_quantity += 1;
+                }
+                let remaining_stamina = from_units.stamina - move_cost;
+
+                from_tile.units = None;
+
+                to_tile.units = Some(Units {
+                    unit_type: from_units.unit_type,
+                    quantity: remaining_attacker_quantity as u16,
+                    stamina: remaining_stamina,
+                });
+                to_tile.owner = player_pubkey;
+
+                game.tiles[from_row][from_col] = Some(from_tile);
+                game.tiles[to_row][to_col] = Some(to_tile);
+                return Ok(());
+            }
         }
     } else {
         // 4) Destination tile is unoccupied, move units normally
