@@ -65,10 +65,12 @@ pub fn create_game(
     game.players[0] = Some(PlayerInfo {
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
+        balance: 0,
     });
     player_infos.push(PlayerInfo {
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
+        balance: 0,
     });
 
     // Add bots if any
@@ -76,6 +78,7 @@ pub fn create_game(
         let bot_info = PlayerInfo {
             pubkey: Pubkey::default(),
             is_bot: true,
+            balance: 0,
         };
         game.players[i] = Some(bot_info);
         player_infos.push(bot_info);

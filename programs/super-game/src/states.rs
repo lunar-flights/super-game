@@ -39,6 +39,7 @@ pub enum MapSize {
 pub struct PlayerInfo {
     pub pubkey: Pubkey,
     pub is_bot: bool,
+    pub balance: u32,
 }
 
 #[account]
