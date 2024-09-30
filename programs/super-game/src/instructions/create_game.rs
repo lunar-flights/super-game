@@ -130,7 +130,10 @@ fn initialize_tiles(
                     quantity: 5,
                     stamina: 1,
                 });
-                tile.is_base = true;
+                tile.building = Some(Building {
+                    building_type: BuildingType::Base,
+                    level: 1,
+                });
             }
 
             grid[row_index][adjusted_col] = Some(tile);

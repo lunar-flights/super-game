@@ -64,7 +64,7 @@ impl Game {
 
     // ~ 2119 bytes
     pub const LEN: usize = 5000;
-    // 8 + 4 + 32 + (Self::MAX_PLAYERS * 33) + 1 + 1 + 1 + 1 + (4 + (Self::MAX_TILES * Tile::LEN));
+    // 8 + 4 + 32 + (1 + (Self::MAX_PLAYERS * (32 + 1 + 4))) + 1 + 1 + 1 + 1 + (4 + (Self::MAX_TILES * Tile::LEN));
 
     pub fn get_map_layout(map_size: MapSize) -> Vec<u8> {
         match map_size {
@@ -119,7 +119,39 @@ impl UnitType {
 }
 
 impl Units {
-    pub const LEN: usize = 1 + 1 + 1;
+    pub const LEN: usize = 1 + 2 + 1;
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq)]
+pub enum BuildingType {
+    Base,
+    GasPlant,
+    TankFactory,
+    PlaneFactory,
+    Fort,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
+pub struct Building {
+    pub building_type: BuildingType,
+    pub level: u8,
+}
+
+impl Building {
+    pub const LEN: usize = 1 + 1;
+
+    pub fn get_yield(&self) -> u8 {
+        match self.building_type {
+            BuildingType::Base => match self.level {
+                1 => 3,
+                2 => 4,
+                3 => 6,
+                _ => 0,
+            },
+            BuildingType::GasPlant => 1,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
@@ -127,12 +159,11 @@ pub struct Tile {
     pub owner: Pubkey,
     pub level: u8,
     pub units: Option<Units>,
-    pub buildings: u8,
-    pub is_base: bool,
+    pub building: Option<Building>,
 }
 
 impl Tile {
-    pub const LEN: usize = 32 + 1 + 1 + Units::LEN + 1 + 1;
+    pub const LEN: usize = 32 + 1 + 1 + Units::LEN + 1 + Building::LEN;
 
     pub fn new(level: u8) -> Self {
         let mutants = Self::default_mutants(level);
@@ -144,18 +175,25 @@ impl Tile {
                 quantity: mutants,
                 stamina: 0,
             }),
-            buildings: 0,
-            is_base: false,
+            building: None,
         }
     }
 
     pub fn get_yield(&self) -> u8 {
-        match self.level {
+        let tile_yield = match self.level {
             1 => 0,
             2 => 1,
             3 => 2,
             _ => 0,
-        }
+        };
+
+        let building_yield = if let Some(building) = &self.building {
+            building.get_yield()
+        } else {
+            0
+        };
+
+        tile_yield + building_yield
     }
 
     pub fn is_neutral(&self) -> bool {
@@ -167,7 +205,13 @@ impl Tile {
         if self.is_neutral() {
             0
         } else {
-            self.level
+            let mut bonus = self.level;
+            if let Some(building) = &self.building {
+                if building.building_type == BuildingType::Fort {
+                    bonus += building.level;
+                }
+            }
+            bonus
         }
     }
 
