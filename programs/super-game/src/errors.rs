@@ -24,6 +24,24 @@ pub enum GameError {
     OutOfBounds,
     #[msg("Bot key not found")]
     BotKeyNotFound,
+    #[msg("Invalid coordinates")]
+    InvalidCoordinates,
+    #[msg("Tile does not exist")]
+    InvalidTile,
+    #[msg("You do not own this tile")]
+    TileNotOwned,
+    #[msg("Different unit type already present on the tile")]
+    DifferentUnitTypeOnTile,
+    #[msg("A Tank Factory is required to recruit tanks")]
+    RequiresTankFactory,
+    #[msg("A Plane Factory is required to recruit planes")]
+    RequiresPlaneFactory,
+    #[msg("Invalid unit type")]
+    InvalidUnitType,
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
+    #[msg("Too many units")]
+    TooManyUnits,
 }
 
 #[error_code]

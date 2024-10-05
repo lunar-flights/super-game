@@ -5,7 +5,7 @@ pub mod instructions;
 pub mod states;
 
 use instructions::*;
-use states::MapSize;
+use states::{MapSize, UnitType};
 
 declare_id!("GnbCZsVXcRXVegmrQj99eSXjoQWTV1K72KYM6yocoP9S");
 
@@ -46,6 +46,16 @@ pub mod super_game {
             to_row.into(),
             to_col.into(),
         )
+    }
+
+    pub fn recruit_units(
+        ctx: Context<RecruitUnits>,
+        unit_type: UnitType,
+        quantity: u16,
+        row: u8,
+        col: u8,
+    ) -> Result<()> {
+        instructions::recruit_units(ctx, unit_type, quantity, row, col)
     }
 
     pub fn end_turn(ctx: Context<EndTurn>) -> Result<()> {

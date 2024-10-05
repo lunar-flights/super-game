@@ -141,6 +141,90 @@ describe("super-game", () => {
     expect(updatedGameState.tiles[1][1].units).to.be.null;
   });
 
+  it("Fails to recruit units in a tile that doesn't belong to player", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+    const unitType = { infantry: {} };
+
+    try {
+      // tile (3, 3) doesn't belong to player
+      await program.methods
+        .recruitUnits(unitType, 1, 3, 3)
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+      throw new Error("Expected error, but transaction succeeded");
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("TileNotOwned");
+    }
+  });
+
+  it("Fails to recruit 100 infantry units in base tile due to insufficient funds", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+    const unitType = { infantry: {} };
+
+    try {
+      // Not enough money to recruit 100 infantry units
+      await program.methods
+        .recruitUnits(unitType, 100, 1, 1)
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+      throw new Error("Expected error, but transaction succeeded");
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("InsufficientFunds");
+    }
+  });
+
+  it("Successfully recruits 2 infantry units in base tile", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+    const unitType = { infantry: {} };
+
+    const gameStateBefore = await program.account.game.fetch(gamePda);
+    const playerInfoBefore = gameStateBefore.players[0];
+
+    // Recruit 2 infantry units at tile (1, 1)
+    await program.methods
+      .recruitUnits(unitType, 2, 1, 1)
+      .accounts({
+        game: gamePda,
+        player: player,
+      })
+      .rpc();
+
+    const gameStateAfter = await program.account.game.fetch(gamePda);
+    const playerInfoAfter = gameStateAfter.players[0];
+
+    const unitCost = 1;
+    const totalCost = unitCost * 2;
+    expect(playerInfoAfter.balance).to.equal(playerInfoBefore.balance - totalCost);
+
+    const tile = gameStateAfter.tiles[1][1];
+    expect(tile.units.quantity).to.equal(2);
+    expect(tile.units.unitType).to.deep.equal({ infantry: {} });
+  });
+
   it("End turn", async () => {
     const player = provider.wallet.publicKey;
     const gameData = { game_id: 0 };
