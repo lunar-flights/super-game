@@ -4,6 +4,23 @@ use anchor_lang::solana_program::hash::{hashv, Hash};
 
 use anchor_lang::prelude::*;
 
+// pre-generated bot public keys to save CU
+// neutral NPCs have Pubkey::default()
+const BOT_PUBLIC_KEYS: [Pubkey; 3] = [
+    Pubkey::new_from_array([
+        8, 234, 193, 188, 163, 128, 181, 240, 180, 42, 49, 19, 218, 104, 195, 108, 189, 69, 131,
+        163, 197, 198, 186, 4, 166, 41, 174, 72, 173, 229, 125, 207,
+    ]),
+    Pubkey::new_from_array([
+        8, 234, 195, 118, 28, 36, 203, 87, 48, 84, 146, 9, 204, 113, 73, 169, 49, 245, 133, 232,
+        224, 128, 22, 217, 78, 231, 36, 217, 60, 100, 185, 152,
+    ]),
+    Pubkey::new_from_array([
+        8, 234, 195, 59, 103, 121, 137, 224, 69, 68, 214, 200, 243, 107, 198, 21, 109, 230, 36,
+        238, 97, 34, 196, 165, 222, 27, 126, 86, 143, 105, 59, 193,
+    ]),
+];
+
 #[derive(Accounts)]
 pub struct CreateGame<'info> {
     #[account(mut, seeds = [b"SUPER"], bump)]
@@ -65,20 +82,23 @@ pub fn create_game(
     game.players[0] = Some(PlayerInfo {
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
-        balance: 0,
+        balance: 2,
     });
     player_infos.push(PlayerInfo {
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
-        balance: 0,
+        balance: 2,
     });
 
     // Add bots if any
     for i in 1..=num_bots {
+        let bot_pubkey = BOT_PUBLIC_KEYS
+            .get(i - 1)
+            .ok_or(GameError::BotKeyNotFound)?;
         let bot_info = PlayerInfo {
-            pubkey: Pubkey::default(),
+            pubkey: *bot_pubkey,
             is_bot: true,
-            balance: 0,
+            balance: 2,
         };
         game.players[i] = Some(bot_info);
         player_infos.push(bot_info);

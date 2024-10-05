@@ -23,17 +23,50 @@ pub fn end_turn(ctx: Context<EndTurn>) -> Result<()> {
         return err!(GameError::NotYourTurn);
     }
 
-    // Restore stamina for all units if game with bots only
     if !game.is_multiplayer {
+        const MAX_PLAYERS: usize = Game::MAX_PLAYERS;
+        let mut player_pubkeys = [Pubkey::default(); MAX_PLAYERS];
+        let mut incomes = [0u32; MAX_PLAYERS];
+
+        for (player_index, player_option) in game.players.iter().enumerate() {
+            if let Some(player_info) = player_option {
+                player_pubkeys[player_index] = player_info.pubkey;
+                incomes[player_index] = 0;
+            } else {
+                player_pubkeys[player_index] = Pubkey::default();
+                incomes[player_index] = 0;
+            }
+        }
+
+        let num_players = game.players.len();
         for row in &mut game.tiles {
-            for tile in row.iter_mut().flatten() {
-                // if tile.owner == player_pubkey {
+            for tile_option in row.iter_mut().flatten() {
+                let tile = tile_option;
+
+                // Restore stamina for all units
                 if let Some(units) = &mut tile.units {
                     units.stamina = units.unit_type.max_stamina();
                 }
-                //}
+
+                // Accumulate income from tiles based on ownership
+                for player_index in 0..num_players {
+                    if tile.owner == player_pubkeys[player_index] {
+                        let tile_yield = tile.get_yield() as u32;
+                        incomes[player_index] = incomes[player_index].saturating_add(tile_yield);
+                        break;
+                    }
+                }
             }
         }
+
+        for (player_index, player_option) in game.players.iter_mut().enumerate() {
+            if let Some(player_info) = player_option {
+                let income = incomes[player_index];
+                player_info.balance = player_info.balance.saturating_add(income);
+            }
+        }
+
+        game.round += 1;
     }
 
     if game.is_multiplayer {
@@ -52,8 +85,6 @@ pub fn end_turn(ctx: Context<EndTurn>) -> Result<()> {
         if game.current_player_index == 0 {
             game.round += 1;
         }
-    } else {
-        game.round += 1;
     }
 
     game.turn_timestamp = current_timestamp;

@@ -182,8 +182,8 @@ impl Tile {
     pub fn get_yield(&self) -> u8 {
         let tile_yield = match self.level {
             1 => 0,
-            2 => 1,
-            3 => 2,
+            2 => 0,
+            3 => 1,
             _ => 0,
         };
 

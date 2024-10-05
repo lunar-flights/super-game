@@ -22,6 +22,8 @@ pub enum GameError {
     NotYourTurn,
     #[msg("Destination is out of map bounds")]
     OutOfBounds,
+    #[msg("Bot key not found")]
+    BotKeyNotFound,
 }
 
 #[error_code]
