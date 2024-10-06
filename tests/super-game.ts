@@ -134,6 +134,7 @@ describe("super-game", () => {
     expect(updatedGameState.tiles[2][1].units.quantity).to.equal(
       initialGameState.tiles[1][1].units.quantity - initialGameState.tiles[2][1].units.quantity
     );
+    expect(updatedGameState.players[0].attackPoints).to.equal(initialGameState.players[0].attackPoints - 1);
     expect(updatedGameState.tiles[2][1].units.unitType).to.deep.equal({ infantry: {} });
     expect(updatedGameState.tiles[2][1].owner.toBase58()).to.be.equal(player.toBase58());
     expect(updatedGameState.tiles[2][1].units.stamina).to.equal(0);

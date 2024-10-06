@@ -51,6 +51,32 @@ pub fn move_unit(
         None => return err!(UnitError::NoUnitsToMove),
     };
 
+    // Check if player has enough AP when moving to a tile owned by other player
+    {
+        let player_index = game
+            .players
+            .iter()
+            .position(|player_option| {
+                if let Some(player_info) = player_option {
+                    player_info.pubkey == player_pubkey
+                } else {
+                    false
+                }
+            })
+            .ok_or(GameError::InvalidPlayer)?;
+
+        let player_info = game.players[player_index]
+            .as_mut()
+            .ok_or(GameError::InvalidPlayer)?;
+
+        if to_tile.owner != player_pubkey {
+            if player_info.attack_points < 1 {
+                return err!(UnitError::NotEnoughAttackPoints);
+            }
+            player_info.attack_points -= 1;
+        }
+    }
+
     // diagonal moves cost 2 stamina, vertical/horizontal - 1 stamina
     let row_diff = (from_row as isize - to_row as isize).unsigned_abs();
     let col_diff = (from_col as isize - to_col as isize).unsigned_abs();

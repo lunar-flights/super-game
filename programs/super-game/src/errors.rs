@@ -60,4 +60,6 @@ pub enum UnitError {
     TileOccupiedByOtherUnitType,
     #[msg("Tile is occupied by enemy unit")]
     TileOccupiedByEnemy,
+    #[msg("No attack points")]
+    NotEnoughAttackPoints,
 }

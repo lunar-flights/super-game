@@ -83,14 +83,14 @@ pub fn create_game(
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
         balance: 2,
-        attack_points: 2,
+        attack_points: 1,
         is_alive: true,
     });
     player_infos.push(PlayerInfo {
         pubkey: ctx.accounts.player.key(),
         is_bot: false,
         balance: 2,
-        attack_points: 2,
+        attack_points: 1,
         is_alive: true,
     });
 
@@ -103,7 +103,7 @@ pub fn create_game(
             pubkey: *bot_pubkey,
             is_bot: true,
             balance: 2,
-            attack_points: 2,
+            attack_points: 1,
             is_alive: true,
         };
         game.players[i] = Some(bot_info);
