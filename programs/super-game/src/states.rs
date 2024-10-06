@@ -40,6 +40,8 @@ pub struct PlayerInfo {
     pub pubkey: Pubkey,
     pub is_bot: bool,
     pub balance: u32,
+    pub attack_points: u8,
+    pub is_alive: bool,
 }
 
 #[account]
@@ -60,6 +62,7 @@ pub struct Game {
 
 impl Game {
     pub const MAX_PLAYERS: usize = 4;
+    pub const MAX_ATTACK_POINTS: u8 = 2;
     pub const MAX_TILES: usize = 81;
 
     // ~ 2119 bytes
