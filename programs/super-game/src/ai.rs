@@ -13,8 +13,9 @@ const DESIRED_UNIT_QUANTITY: u16 = 9;
 
 /* Bots make decisions in the following order:
     1. Attack adjacent tiles if possible
-    2. Recruit units if possible
+    2. Recruit units
     3. Upgrade base if possible
+    4. Build new constructions
 */
 pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
     let bot_pubkey = game.players[bot_index]
@@ -90,7 +91,6 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
 
             let (from_tile_option, to_tile_option);
 
-            // Handle movements in different rows
             if action.from_row != action.to_row {
                 let (from_row_slice, to_row_slice) = if action.from_row < action.to_row {
                     let (first, second) = game.tiles.split_at_mut(action.to_row);
@@ -102,7 +102,6 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
                 from_tile_option = &mut from_row_slice[action.from_col];
                 to_tile_option = &mut to_row_slice[action.to_col];
             } else {
-                // Handle same row
                 let row = &mut game.tiles[action.from_row];
                 if action.from_col != action.to_col {
                     let (from_tile_ref, to_tile_ref) = if action.from_col < action.to_col {
@@ -162,11 +161,15 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
                             quantity: remaining_attacker_units as u16,
                             stamina: units.stamina - move_cost,
                         });
+                        to_tile.building = None;
                     }
                 }
             } else {
                 // No units on the target tile, take it without combat
-                to_tile.owner = bot_pubkey;
+                if to_tile.owner != bot_pubkey {
+                    to_tile.owner = bot_pubkey;
+                    to_tile.building = None;
+                }
                 to_tile.units = Some(Units {
                     unit_type: units.unit_type,
                     quantity: units.quantity,

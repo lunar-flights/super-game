@@ -200,6 +200,7 @@ pub fn move_unit(
                         stamina: remaining_stamina,
                     });
                     to_tile.owner = player_pubkey;
+                    to_tile.building = None;
 
                     game.tiles[from_row][from_col] = Some(from_tile);
                     game.tiles[to_row][to_col] = Some(to_tile);
@@ -217,7 +218,10 @@ pub fn move_unit(
         };
         to_tile.units = Some(moved_units);
         from_tile.units = None;
-        to_tile.owner = from_tile.owner;
+        if to_tile.owner != from_tile.owner {
+            to_tile.owner = from_tile.owner;
+            to_tile.building = None;
+        }
     }
 
     game.tiles[from_row][from_col] = Some(from_tile);

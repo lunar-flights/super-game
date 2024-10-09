@@ -190,26 +190,21 @@ fn remove_defeated_players(game: &mut Game) -> Result<()> {
         }
     }
 
-    let mut winner: Option<Pubkey> = None;
-    let alive_players = game
+    let alive_players: Vec<&PlayerInfo> = game
         .players
         .iter()
-        .filter(|player_option| {
-            if let Some(player) = player_option {
-                winner = Some(player.pubkey);
+        .filter_map(|player_option| player_option.as_ref())
+        .filter(|player| player.is_alive)
+        .collect();
 
-                player.is_alive
-            } else {
-                false
-            }
-        })
-        .count();
+    let alive_count = alive_players.len();
 
-    if alive_players <= 1 {
+    if alive_count <= 1 {
         game.status = GameStatus::Completed;
     }
-    if alive_players == 1 {
-        game.winner = winner;
+
+    if alive_count == 1 {
+        game.winner = Some(alive_players[0].pubkey);
     }
 
     Ok(())
