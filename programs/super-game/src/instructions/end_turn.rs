@@ -137,6 +137,13 @@ fn process_multiplayer_turn(game: &mut Game) -> Result<()> {
         game.round += 1;
     }
 
+    let (player_pubkeys, mut incomes) = init_incomes(game);
+    calculate_incomes(game, &mut incomes, &player_pubkeys)?;
+
+    apply_incomes(game, &incomes, MAX_ATTACK_POINTS)?;
+
+    remove_defeated_players(game)?;
+
     Ok(())
 }
 
@@ -181,6 +188,28 @@ fn remove_defeated_players(game: &mut Game) -> Result<()> {
                 }
             }
         }
+    }
+
+    let mut winner: Option<Pubkey> = None;
+    let alive_players = game
+        .players
+        .iter()
+        .filter(|player_option| {
+            if let Some(player) = player_option {
+                winner = Some(player.pubkey);
+
+                player.is_alive
+            } else {
+                false
+            }
+        })
+        .count();
+
+    if alive_players <= 1 {
+        game.status = GameStatus::Completed;
+    }
+    if alive_players == 1 {
+        game.winner = winner;
     }
 
     Ok(())

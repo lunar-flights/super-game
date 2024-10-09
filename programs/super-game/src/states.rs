@@ -49,6 +49,7 @@ pub struct Game {
     pub game_id: u32,
     pub creator: Pubkey,
     pub players: [Option<PlayerInfo>; 4],
+    pub winner: Option<Pubkey>,
     pub status: GameStatus,
     pub max_players: u8,
     pub is_multiplayer: bool,
@@ -65,9 +66,9 @@ impl Game {
     pub const MAX_ATTACK_POINTS: u8 = 2;
     pub const MAX_TILES: usize = 81;
 
-    // ~ 2119 bytes
     pub const LEN: usize = 5000;
-    // 8 + 4 + 32 + (1 + (Self::MAX_PLAYERS * (32 + 1 + 4))) + 1 + 1 + 1 + 1 + (4 + (Self::MAX_TILES * Tile::LEN));
+    // ~ 2119 bytes
+    // 8 + 4 + 32 + (1 + (Self::MAX_PLAYERS * (32 + 1 + 4))) + 32 + 1 + 1 + 1 + 1 + (4 + (Self::MAX_TILES * Tile::LEN));
 
     pub fn get_map_layout(map_size: MapSize) -> Vec<u8> {
         match map_size {
