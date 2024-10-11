@@ -35,47 +35,74 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
         }
     }
 
-    // 1) Attack adjacent tiles if possible
-    {
-        let mut pending_moves = Vec::new();
+    attack_adjacent_tiles(game, bot_pubkey, &bot_tile_positions)?;
 
-        for &(row_index, col_index) in &bot_tile_positions {
-            let tile = &game.tiles[row_index][col_index];
-            if let Some(tile) = tile {
-                if let Some(units) = &tile.units {
-                    // Only units with stamina can move
-                    if units.stamina > 0 {
-                        let adjacent_positions = get_adjacent_tiles(row_index, col_index, game);
+    recruit_units(game, bot_index, &bot_tile_positions)?;
 
-                        for (adj_row, adj_col) in adjacent_positions {
-                            if adj_row >= game.tiles.len() || adj_col >= game.tiles[adj_row].len() {
-                                continue;
-                            }
+    Ok(())
+}
 
-                            let adj_tile_option = &game.tiles[adj_row][adj_col];
-                            if let Some(adj_tile) = adj_tile_option {
-                                if adj_tile.owner != bot_pubkey {
-                                    // Check if it makes sense to attack
-                                    let bot_strength =
-                                        units.quantity * units.unit_type.strength() as u16;
-                                    let opponent_strength =
-                                        if let Some(opponent_units) = &adj_tile.units {
-                                            opponent_units.quantity
-                                                * opponent_units.unit_type.strength() as u16
-                                        } else {
-                                            0
-                                        };
+fn attack_adjacent_tiles(
+    game: &mut Game,
+    bot_pubkey: Pubkey,
+    bot_tile_positions: &[(usize, usize)],
+) -> Result<()> {
+    let mut pending_moves = Vec::new();
 
-                                    if bot_strength > opponent_strength {
-                                        // Schedule the attack
-                                        pending_moves.push(MoveAction {
-                                            from_row: row_index,
-                                            from_col: col_index,
-                                            to_row: adj_row,
-                                            to_col: adj_col,
-                                        });
-                                        break;
-                                    }
+    for &(row_index, col_index) in bot_tile_positions {
+        let tile = &game.tiles[row_index][col_index];
+        if let Some(tile) = tile {
+            if let Some(units) = &tile.units {
+                if units.stamina > 0 {
+                    let adjacent_positions = get_adjacent_tiles(row_index, col_index, game);
+
+                    for (adj_row, adj_col) in adjacent_positions {
+                        if adj_row >= game.tiles.len() || adj_col >= game.tiles[adj_row].len() {
+                            continue;
+                        }
+
+                        let adj_tile_option = &game.tiles[adj_row][adj_col];
+                        if let Some(adj_tile) = adj_tile_option {
+                            if adj_tile.owner != bot_pubkey {
+                                // Check if it makes sense to attack
+                                let bot_strength =
+                                    units.quantity as u32 * units.unit_type.strength() as u32;
+
+                                let defense_bonus = adj_tile.get_defense_bonus() as u32;
+
+                                let adjusted_bot_strength =
+                                    bot_strength.saturating_sub(defense_bonus);
+
+                                if adjusted_bot_strength == 0 {
+                                    continue;
+                                }
+
+                                let opponent_unit_strength =
+                                    if let Some(opponent_units) = &adj_tile.units {
+                                        opponent_units.quantity as u32
+                                            * opponent_units.unit_type.strength() as u32
+                                    } else {
+                                        0
+                                    };
+
+                                let opponent_building_strength =
+                                    if let Some(building) = &adj_tile.building {
+                                        building.get_strength() as u32
+                                    } else {
+                                        0
+                                    };
+
+                                let opponent_strength =
+                                    opponent_unit_strength + opponent_building_strength;
+
+                                if adjusted_bot_strength > opponent_strength {
+                                    pending_moves.push(MoveAction {
+                                        from_row: row_index,
+                                        from_col: col_index,
+                                        to_row: adj_row,
+                                        to_col: adj_col,
+                                    });
+                                    break;
                                 }
                             }
                         }
@@ -83,156 +110,177 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
                 }
             }
         }
+    }
 
-        for action in pending_moves {
-            if action.from_row == action.to_row && action.from_col == action.to_col {
-                continue;
-            }
+    let mut players_to_update: Vec<Pubkey> = Vec::new();
 
-            let (from_tile_option, to_tile_option);
+    for action in pending_moves {
+        if action.from_row == action.to_row && action.from_col == action.to_col {
+            continue;
+        }
 
-            if action.from_row != action.to_row {
-                let (from_row_slice, to_row_slice) = if action.from_row < action.to_row {
-                    let (first, second) = game.tiles.split_at_mut(action.to_row);
-                    (&mut first[action.from_row], &mut second[0])
-                } else {
-                    let (first, second) = game.tiles.split_at_mut(action.from_row);
-                    (&mut second[0], &mut first[action.to_row])
-                };
-                from_tile_option = &mut from_row_slice[action.from_col];
-                to_tile_option = &mut to_row_slice[action.to_col];
-            } else {
-                let row = &mut game.tiles[action.from_row];
-                if action.from_col != action.to_col {
-                    let (from_tile_ref, to_tile_ref) = if action.from_col < action.to_col {
-                        let (first, second) = row.split_at_mut(action.to_col);
-                        (&mut first[action.from_col], &mut second[0])
-                    } else {
-                        let (first, second) = row.split_at_mut(action.from_col);
-                        (&mut second[0], &mut first[action.to_col])
-                    };
-                    from_tile_option = from_tile_ref;
-                    to_tile_option = to_tile_ref;
-                } else {
-                    continue;
-                }
-            }
+        let (from_tile_option, to_tile_option) = get_tile_options(game, action)?;
 
-            let mut from_tile = from_tile_option.take().ok_or(GameError::InvalidTile)?;
-            let mut to_tile = to_tile_option.take().ok_or(GameError::InvalidTile)?;
-            let units = from_tile.units.take().ok_or(GameError::InvalidTile)?;
-            let move_cost = 1;
+        let from_tile = from_tile_option.as_mut().ok_or(GameError::InvalidTile)?;
+        let to_tile = to_tile_option.as_mut().ok_or(GameError::InvalidTile)?;
 
-            // Attack Logic
-            if let Some(to_units) = &mut to_tile.units {
-                // TODO: add tile defense bonus
-                let attacker_strength = units.quantity as u32 * units.unit_type.strength() as u32;
-                let defender_strength =
-                    to_units.quantity as u32 * to_units.unit_type.strength() as u32;
+        if let Some(destroyed_player_pubkey) = handle_attack(from_tile, to_tile, bot_pubkey)? {
+            players_to_update.push(destroyed_player_pubkey);
+        }
+    }
 
-                match attacker_strength.cmp(&defender_strength) {
-                    std::cmp::Ordering::Equal => {
-                        // Both attacker and defender units are destroyed
-                        to_tile.units = None;
-                    }
-                    std::cmp::Ordering::Less => {
-                        // Attacker lost
-                        let remaining_strength = defender_strength - attacker_strength;
-                        let unit_strength = to_units.unit_type.strength() as u32;
-                        let mut remaining_defender_units = remaining_strength / unit_strength;
-                        if remaining_strength % unit_strength != 0 {
-                            remaining_defender_units += 1;
-                        }
-                        to_units.quantity = remaining_defender_units as u16;
-                    }
-                    std::cmp::Ordering::Greater => {
-                        // Attacker won
-                        let remaining_attacker_strength = attacker_strength - defender_strength;
-                        let unit_strength = units.unit_type.strength() as u32;
-                        let mut remaining_attacker_units =
-                            remaining_attacker_strength / unit_strength;
-                        if remaining_attacker_strength % unit_strength != 0 {
-                            remaining_attacker_units += 1;
-                        }
+    for player_pubkey in players_to_update {
+        update_player_status(game, player_pubkey, false);
+    }
 
-                        to_tile.owner = bot_pubkey;
-                        to_tile.units = Some(Units {
-                            unit_type: units.unit_type,
-                            quantity: remaining_attacker_units as u16,
-                            stamina: units.stamina - move_cost,
-                        });
-                        to_tile.building = None;
-                    }
-                }
-            } else {
-                // No units on the target tile, take it without combat
-                if to_tile.owner != bot_pubkey {
-                    to_tile.owner = bot_pubkey;
+    Ok(())
+}
+
+fn handle_attack(
+    from_tile: &mut Tile,
+    to_tile: &mut Tile,
+    bot_pubkey: Pubkey,
+) -> Result<Option<Pubkey>> {
+    let from_units = from_tile.units.as_ref().ok_or(GameError::InvalidTile)?;
+
+    let from_unit_type = from_units.unit_type;
+    let from_unit_quantity = from_units.quantity;
+    let from_unit_strength = from_units.unit_type.strength() as u32;
+    let from_unit_stamina = from_units.stamina;
+
+    let move_cost = 1;
+
+    from_tile.units = None;
+
+    let attacker_strength = from_unit_quantity as u32 * from_unit_strength;
+
+    let defense_bonus = to_tile.get_defense_bonus() as u32;
+    let adjusted_attacker_strength = attacker_strength.saturating_sub(defense_bonus);
+
+    if adjusted_attacker_strength == 0 {
+        return Ok(None);
+    }
+
+    let defender_unit_strength = if let Some(to_units) = &to_tile.units {
+        to_units.quantity as u32 * to_units.unit_type.strength() as u32
+    } else {
+        0
+    };
+
+    let defender_building_strength = if let Some(building) = &to_tile.building {
+        building.get_strength() as u32
+    } else {
+        0
+    };
+
+    let defender_strength = defender_unit_strength + defender_building_strength;
+
+    let mut base_destroyed_player: Option<Pubkey> = None;
+
+    match adjusted_attacker_strength.cmp(&defender_strength) {
+        std::cmp::Ordering::Equal => {
+            // Both units die
+            to_tile.units = None;
+
+            if let Some(building) = &to_tile.building {
+                if let BuildingType::Base = building.building_type {
+                    base_destroyed_player = Some(to_tile.owner);
                     to_tile.building = None;
                 }
-                to_tile.units = Some(Units {
-                    unit_type: units.unit_type,
-                    quantity: units.quantity,
-                    stamina: units.stamina - move_cost,
-                });
             }
-
-            *from_tile_option = Some(from_tile);
-            *to_tile_option = Some(to_tile);
         }
-    }
+        std::cmp::Ordering::Less => {
+            // Attacker loses
 
-    // 2) Recruit units if possible
-    {
-        let bot = game.players[bot_index]
-            .as_mut()
-            .ok_or(GameError::InvalidPlayer)?;
-
-        let infantry_cost = UnitType::Infantry.cost() as u32;
-
-        // TODO: Sort tiles based on proximity to enemy tiles
-
-        for &(row_index, col_index) in &bot_tile_positions {
-            let tile = game.tiles[row_index][col_index]
-                .as_mut()
-                .ok_or(GameError::InvalidTile)?;
-
-            let current_quantity = if let Some(units) = &tile.units {
-                units.quantity
+            let remaining_defender_strength =
+                defender_unit_strength.saturating_sub(adjusted_attacker_strength);
+            if defender_unit_strength > 0 {
+                let unit_strength = to_tile.units.as_ref().unwrap().unit_type.strength() as u32;
+                let remaining_defender_units =
+                    (remaining_defender_strength + unit_strength - 1) / unit_strength;
+                let original_quantity = to_tile.units.as_ref().unwrap().quantity;
+                to_tile.units.as_mut().unwrap().quantity =
+                    remaining_defender_units.min(original_quantity as u32) as u16;
             } else {
-                0
-            };
+                to_tile.units = None;
+            }
+        }
+        std::cmp::Ordering::Greater => {
+            // Attacker wins
 
-            if current_quantity < DESIRED_UNIT_QUANTITY {
-                let units_needed = DESIRED_UNIT_QUANTITY - current_quantity;
+            let remaining_attacker_strength = adjusted_attacker_strength - defender_strength;
+            let remaining_attacker_units =
+                (remaining_attacker_strength + from_unit_strength - 1) / from_unit_strength;
+            let remaining_stamina = from_unit_stamina.saturating_sub(move_cost);
 
-                let affordable_units =
-                    (bot.balance / infantry_cost).min(units_needed as u32) as u16;
+            to_tile.units = Some(Units {
+                unit_type: from_unit_type,
+                quantity: remaining_attacker_units as u16,
+                stamina: remaining_stamina,
+            });
 
-                if affordable_units > 0 {
-                    bot.balance = bot
-                        .balance
-                        .saturating_sub(affordable_units as u32 * infantry_cost);
-
-                    if let Some(units) = &mut tile.units {
-                        units.quantity += affordable_units;
-                    } else {
-                        tile.units = Some(Units {
-                            unit_type: UnitType::Infantry,
-                            quantity: affordable_units,
-                            stamina: UnitType::Infantry.max_stamina(),
-                        });
-                    }
-                }
-
-                // Bot is out of funds, no need to check other tiles
-                if bot.balance < infantry_cost {
-                    break;
+            if let Some(building) = &to_tile.building {
+                if let BuildingType::Base = building.building_type {
+                    base_destroyed_player = Some(to_tile.owner);
+                    to_tile.building = None;
                 }
             }
+            to_tile.owner = bot_pubkey;
         }
     }
 
+    Ok(base_destroyed_player)
+}
+
+fn recruit_units(
+    game: &mut Game,
+    bot_index: usize,
+    bot_tile_positions: &[(usize, usize)],
+) -> Result<()> {
+    let bot = game.players[bot_index]
+        .as_mut()
+        .ok_or(GameError::InvalidPlayer)?;
+
+    let infantry_cost = UnitType::Infantry.cost() as u32;
+
+    for &(row_index, col_index) in bot_tile_positions {
+        let tile = game.tiles[row_index][col_index]
+            .as_mut()
+            .ok_or(GameError::InvalidTile)?;
+
+        let current_quantity = if let Some(units) = &tile.units {
+            units.quantity
+        } else {
+            0
+        };
+
+        if current_quantity < DESIRED_UNIT_QUANTITY {
+            let units_needed = DESIRED_UNIT_QUANTITY - current_quantity;
+
+            let affordable_units = (bot.balance / infantry_cost).min(units_needed as u32) as u16;
+
+            if affordable_units > 0 {
+                bot.balance = bot
+                    .balance
+                    .saturating_sub(affordable_units as u32 * infantry_cost);
+
+                if let Some(units) = &mut tile.units {
+                    units.quantity += affordable_units;
+                } else {
+                    tile.units = Some(Units {
+                        unit_type: UnitType::Infantry,
+                        quantity: affordable_units,
+                        stamina: UnitType::Infantry.max_stamina(),
+                    });
+                }
+            }
+
+            // Bot is out of funds, no need to check other tiles
+            if bot.balance < infantry_cost {
+                break;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -256,4 +304,55 @@ fn get_adjacent_tiles(row: usize, col: usize, game: &Game) -> Vec<(usize, usize)
     }
 
     positions
+}
+
+fn update_player_status(game: &mut Game, player_pubkey: Pubkey, is_alive: bool) {
+    if let Some(player_index) = game.players.iter().position(|player_option| {
+        if let Some(player_info) = player_option {
+            player_info.pubkey == player_pubkey
+        } else {
+            false
+        }
+    }) {
+        if let Some(player_info) = &mut game.players[player_index] {
+            player_info.is_alive = is_alive;
+        }
+    }
+}
+
+fn get_tile_options(
+    game: &mut Game,
+    action: MoveAction,
+) -> Result<(&mut Option<Tile>, &mut Option<Tile>)> {
+    let from_tile_option;
+    let to_tile_option;
+
+    if action.from_row != action.to_row {
+        let (from_row_slice, to_row_slice) = if action.from_row < action.to_row {
+            let (first, second) = game.tiles.split_at_mut(action.to_row);
+            (&mut first[action.from_row], &mut second[0])
+        } else {
+            let (first, second) = game.tiles.split_at_mut(action.from_row);
+            (&mut second[0], &mut first[action.to_row])
+        };
+        from_tile_option = &mut from_row_slice[action.from_col];
+        to_tile_option = &mut to_row_slice[action.to_col];
+    } else {
+        let row = &mut game.tiles[action.from_row];
+        if action.from_col != action.to_col {
+            let (from_tile_ref, to_tile_ref) = if action.from_col < action.to_col {
+                let (first, second) = row.split_at_mut(action.to_col);
+                (&mut first[action.from_col], &mut second[0])
+            } else {
+                let (first, second) = row.split_at_mut(action.from_col);
+                (&mut second[0], &mut first[action.to_col])
+            };
+            from_tile_option = from_tile_ref;
+            to_tile_option = to_tile_ref;
+        } else {
+            return err!(GameError::InvalidTile);
+        }
+    }
+
+    Ok((from_tile_option, to_tile_option))
 }
