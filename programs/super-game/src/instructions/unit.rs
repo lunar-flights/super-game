@@ -1,5 +1,5 @@
 use crate::errors::{GameError, UnitError};
-use crate::states::{Game, Tile, Units};
+use crate::states::{BuildingType, Game, Tile, Units};
 use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
@@ -143,13 +143,28 @@ pub fn move_unit(
                 return Ok(());
             }
 
-            let defender_strength = to_units.quantity as u32 * to_units.unit_type.strength() as u32;
+            let defender_unit_strength =
+                to_units.quantity as u32 * to_units.unit_type.strength() as u32;
+
+            let defender_building_strength = match to_tile.building {
+                Some(building) => building.get_strength() as u32,
+                None => 0,
+            };
+
+            let defender_strength = defender_unit_strength + defender_building_strength;
 
             match adjusted_attacker_strength.cmp(&defender_strength) {
                 std::cmp::Ordering::Equal => {
                     // Both attacker and defender units died
                     from_tile.units = None;
                     to_tile.units = None;
+
+                    if let Some(building) = to_tile.building {
+                        if let BuildingType::Base = building.building_type {
+                            update_player_status(game, to_tile.owner, false);
+                            to_tile.building = None;
+                        }
+                    }
 
                     game.tiles[from_row][from_col] = Some(from_tile);
                     game.tiles[to_row][to_col] = Some(to_tile);
@@ -161,7 +176,7 @@ pub fn move_unit(
                     from_tile.units = None;
 
                     let remaining_defender_strength =
-                        defender_strength - adjusted_attacker_strength;
+                        defender_unit_strength.saturating_sub(adjusted_attacker_strength);
                     let unit_strength = to_units.unit_type.strength() as u32;
                     let mut remaining_defender_units = remaining_defender_strength / unit_strength;
                     if remaining_defender_strength % unit_strength != 0 {
@@ -184,7 +199,7 @@ pub fn move_unit(
                     to_tile.units = None;
 
                     let remaining_attacker_strength =
-                        adjusted_attacker_strength - defender_strength;
+                        adjusted_attacker_strength.saturating_sub(defender_strength);
                     let unit_strength = from_units.unit_type.strength() as u32;
                     let mut remaining_attacker_units = remaining_attacker_strength / unit_strength;
                     if remaining_attacker_strength % unit_strength != 0 {
@@ -199,8 +214,14 @@ pub fn move_unit(
                         quantity: remaining_attacker_units as u16,
                         stamina: remaining_stamina,
                     });
+
+                    if let Some(building) = to_tile.building {
+                        if let BuildingType::Base = building.building_type {
+                            update_player_status(game, to_tile.owner, false);
+                            to_tile.building = None;
+                        }
+                    }
                     to_tile.owner = player_pubkey;
-                    to_tile.building = None;
 
                     game.tiles[from_row][from_col] = Some(from_tile);
                     game.tiles[to_row][to_col] = Some(to_tile);
@@ -251,4 +272,18 @@ fn is_valid_move(
     // Move is valid if the target tile is adjacent, including diagonals
     // stamina check is implemented directly in move_unit
     row_diff <= 1 && col_diff <= 1
+}
+
+fn update_player_status(game: &mut Game, player_pubkey: Pubkey, is_alive: bool) {
+    if let Some(player_index) = game.players.iter().position(|player_option| {
+        if let Some(player_info) = player_option {
+            player_info.pubkey == player_pubkey
+        } else {
+            false
+        }
+    }) {
+        if let Some(player_info) = &mut game.players[player_index] {
+            player_info.is_alive = is_alive;
+        }
+    }
 }

@@ -156,6 +156,19 @@ impl Building {
             _ => 0,
         }
     }
+
+    pub fn get_strength(&self) -> u8 {
+        match self.building_type {
+            BuildingType::Base => match self.level {
+                1 => 12,
+                2 => 16,
+                3 => 24,
+                _ => 0,
+            },
+            BuildingType::Fort => 7,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
