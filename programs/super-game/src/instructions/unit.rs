@@ -98,8 +98,8 @@ pub fn move_unit(
     //    2b) Otherwise error that tile is occupied by other unit type.
     // 3) Destination tile belongs to enemy - attack logic applied
     // 4) Destination tile is not occupied by other units - move unit normally, change tile owner if needed.
-    if let Some(to_units) = &to_tile.units.clone() {
-        if to_tile.owner == player_pubkey {
+    if to_tile.owner == player_pubkey {
+        if let Some(to_units) = &to_tile.units.clone() {
             // 1) Destination tile is friendly & occupied by same unit type, merge them
             if from_units.unit_type == to_units.unit_type {
                 let new_quantity = from_units.quantity + to_units.quantity;
@@ -128,120 +128,122 @@ pub fn move_unit(
                 }
             }
         } else {
-            let attacker_strength =
-                from_units.quantity as u32 * from_units.unit_type.strength() as u32;
+            // Move units to empty friendly tile
+            let moved_units = Units {
+                unit_type: from_units.unit_type,
+                quantity: from_units.quantity,
+                stamina: from_units.stamina - move_cost,
+            };
+            to_tile.units = Some(moved_units);
+            from_tile.units = None;
+        }
+    } else if to_tile.owner != player_pubkey {
+        let attacker_strength = from_units.quantity as u32 * from_units.unit_type.strength() as u32;
 
-            // Tile defense bonus applied before the attack
-            let defense_bonus = to_tile.get_defense_bonus() as u32;
-            let adjusted_attacker_strength = attacker_strength.saturating_sub(defense_bonus);
+        // Tile defense bonus applied before the attack
+        let defense_bonus = to_tile.get_defense_bonus() as u32;
+        let adjusted_attacker_strength = attacker_strength.saturating_sub(defense_bonus);
 
-            if adjusted_attacker_strength == 0 {
+        if adjusted_attacker_strength == 0 {
+            from_tile.units = None;
+
+            game.tiles[from_row][from_col] = Some(from_tile);
+            game.tiles[to_row][to_col] = Some(to_tile);
+            return Ok(());
+        }
+
+        let defender_unit_strength = if let Some(to_units) = &to_tile.units {
+            to_units.quantity as u32 * to_units.unit_type.strength() as u32
+        } else {
+            0
+        };
+
+        let defender_building_strength = if let Some(building) = &to_tile.building {
+            building.get_strength() as u32
+        } else {
+            0
+        };
+
+        let defender_strength = defender_unit_strength + defender_building_strength;
+
+        match adjusted_attacker_strength.cmp(&defender_strength) {
+            std::cmp::Ordering::Equal => {
+                // Both attacker and defender units died
                 from_tile.units = None;
+                to_tile.units = None;
+
+                if let Some(building) = to_tile.building {
+                    if let BuildingType::Base = building.building_type {
+                        update_player_status(game, to_tile.owner, false);
+                        to_tile.building = None;
+                    }
+                }
 
                 game.tiles[from_row][from_col] = Some(from_tile);
                 game.tiles[to_row][to_col] = Some(to_tile);
+
                 return Ok(());
             }
+            std::cmp::Ordering::Less => {
+                // Attacker lost
+                from_tile.units = None;
 
-            let defender_unit_strength =
-                to_units.quantity as u32 * to_units.unit_type.strength() as u32;
-
-            let defender_building_strength = match to_tile.building {
-                Some(building) => building.get_strength() as u32,
-                None => 0,
-            };
-
-            let defender_strength = defender_unit_strength + defender_building_strength;
-
-            match adjusted_attacker_strength.cmp(&defender_strength) {
-                std::cmp::Ordering::Equal => {
-                    // Both attacker and defender units died
-                    from_tile.units = None;
-                    to_tile.units = None;
-
-                    if let Some(building) = to_tile.building {
-                        if let BuildingType::Base = building.building_type {
-                            update_player_status(game, to_tile.owner, false);
-                            to_tile.building = None;
-                        }
-                    }
-
-                    game.tiles[from_row][from_col] = Some(from_tile);
-                    game.tiles[to_row][to_col] = Some(to_tile);
-
-                    return Ok(());
-                }
-                std::cmp::Ordering::Less => {
-                    // Attacker lost
-                    from_tile.units = None;
-
-                    let remaining_defender_strength =
-                        defender_unit_strength.saturating_sub(adjusted_attacker_strength);
-                    let unit_strength = to_units.unit_type.strength() as u32;
-                    let mut remaining_defender_units = remaining_defender_strength / unit_strength;
-                    if remaining_defender_strength % unit_strength != 0 {
-                        remaining_defender_units += 1;
-                    }
-
+                let remaining_defender_strength =
+                    defender_unit_strength.saturating_sub(adjusted_attacker_strength);
+                if defender_unit_strength > 0 {
+                    let unit_strength = if let Some(to_units) = &to_tile.units {
+                        to_units.unit_type.strength() as u32
+                    } else {
+                        1
+                    };
+                    let remaining_defender_units =
+                        (remaining_defender_strength + unit_strength - 1) / unit_strength;
                     to_tile.units = Some(Units {
-                        unit_type: to_units.unit_type,
+                        unit_type: to_tile.units.as_ref().unwrap().unit_type,
                         quantity: remaining_defender_units as u16,
-                        stamina: to_units.stamina,
+                        stamina: to_tile.units.as_ref().unwrap().stamina,
                     });
-
-                    game.tiles[from_row][from_col] = Some(from_tile);
-                    game.tiles[to_row][to_col] = Some(to_tile);
-
-                    return Ok(());
                 }
-                std::cmp::Ordering::Greater => {
-                    // Attacker won
-                    to_tile.units = None;
 
-                    let remaining_attacker_strength =
-                        adjusted_attacker_strength.saturating_sub(defender_strength);
-                    let unit_strength = from_units.unit_type.strength() as u32;
-                    let mut remaining_attacker_units = remaining_attacker_strength / unit_strength;
-                    if remaining_attacker_strength % unit_strength != 0 {
-                        remaining_attacker_units += 1;
-                    }
-                    let remaining_stamina = from_units.stamina - move_cost;
+                game.tiles[from_row][from_col] = Some(from_tile);
+                game.tiles[to_row][to_col] = Some(to_tile);
 
-                    from_tile.units = None;
-
-                    to_tile.units = Some(Units {
-                        unit_type: from_units.unit_type,
-                        quantity: remaining_attacker_units as u16,
-                        stamina: remaining_stamina,
-                    });
-
-                    if let Some(building) = to_tile.building {
-                        if let BuildingType::Base = building.building_type {
-                            update_player_status(game, to_tile.owner, false);
-                            to_tile.building = None;
-                        }
-                    }
-                    to_tile.owner = player_pubkey;
-
-                    game.tiles[from_row][from_col] = Some(from_tile);
-                    game.tiles[to_row][to_col] = Some(to_tile);
-
-                    return Ok(());
-                }
+                return Ok(());
             }
-        }
-    } else {
-        // 4) Destination tile is empty, move units normally
-        let moved_units = Units {
-            unit_type: from_units.unit_type,
-            quantity: from_units.quantity,
-            stamina: from_units.stamina - move_cost,
-        };
-        to_tile.units = Some(moved_units);
-        from_tile.units = None;
-        if to_tile.owner != from_tile.owner {
-            to_tile.owner = from_tile.owner;
-            to_tile.building = None;
+            std::cmp::Ordering::Greater => {
+                // Attacker won
+                to_tile.units = None;
+
+                let remaining_attacker_strength =
+                    adjusted_attacker_strength.saturating_sub(defender_strength);
+                let unit_strength = from_units.unit_type.strength() as u32;
+                let mut remaining_attacker_units = remaining_attacker_strength / unit_strength;
+                if remaining_attacker_strength % unit_strength != 0 {
+                    remaining_attacker_units += 1;
+                }
+                let remaining_stamina = from_units.stamina - move_cost;
+
+                from_tile.units = None;
+
+                to_tile.units = Some(Units {
+                    unit_type: from_units.unit_type,
+                    quantity: remaining_attacker_units as u16,
+                    stamina: remaining_stamina,
+                });
+
+                if let Some(building) = to_tile.building {
+                    if let BuildingType::Base = building.building_type {
+                        update_player_status(game, to_tile.owner, false);
+                        to_tile.building = None;
+                    }
+                }
+                to_tile.owner = player_pubkey;
+
+                game.tiles[from_row][from_col] = Some(from_tile);
+                game.tiles[to_row][to_col] = Some(to_tile);
+
+                return Ok(());
+            }
         }
     }
 
