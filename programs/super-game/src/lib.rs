@@ -6,7 +6,7 @@ pub mod instructions;
 pub mod states;
 
 use instructions::*;
-use states::{MapSize, UnitType};
+use states::{BuildingType, MapSize, UnitType};
 
 declare_id!("GnbCZsVXcRXVegmrQj99eSXjoQWTV1K72KYM6yocoP9S");
 
@@ -57,6 +57,15 @@ pub mod super_game {
         col: u8,
     ) -> Result<()> {
         instructions::recruit_units(ctx, unit_type, quantity, row, col)
+    }
+
+    pub fn build_construction(
+        ctx: Context<BuildConstruction>,
+        row: u8,
+        col: u8,
+        building_type: BuildingType,
+    ) -> Result<()> {
+        instructions::build_construction(ctx, row.into(), col.into(), building_type)
     }
 
     pub fn end_turn(ctx: Context<EndTurn>) -> Result<()> {

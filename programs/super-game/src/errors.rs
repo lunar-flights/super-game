@@ -63,3 +63,17 @@ pub enum UnitError {
     #[msg("No attack points")]
     NotEnoughAttackPoints,
 }
+
+#[error_code]
+pub enum ConstructionError {
+    #[msg("You do not own this tile")]
+    NotYourTile,
+    #[msg("Not enough funds to construct or upgrade")]
+    NotEnoughFunds,
+    #[msg("Tile already has a different building")]
+    BuildingTypeMismatch,
+    #[msg("Building has reached its maximum level")]
+    MaxLevelReached,
+    #[msg("Cannot build a Base")]
+    CannotBuildBase,
+}

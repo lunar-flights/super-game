@@ -249,4 +249,124 @@ describe("super-game", () => {
     // restored stamina of unit who moved before
     expect(updatedGame.tiles[2][1].units.stamina).to.equal(1);
   });
+
+  it("Fails to build Gas Plant on a tile with base", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    try {
+      await program.methods
+        .buildConstruction(1, 1, { gasPlant: {} })
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+      throw new Error("Expected error, but transaction succeeded");
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("BuildingTypeMismatch");
+    }
+  });
+
+  it("Fails to build Gas Plant on a tile not controlled by the player", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    try {
+      await program.methods
+        .buildConstruction(3, 3, { gasPlant: {} })
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+      throw new Error("Expected error, but transaction succeeded");
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("NotYourTile");
+    }
+  });
+
+  it("Fails to build Gas Plant on controlled tile due to insufficient funds", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    const gameState = await program.account.game.fetch(gamePda);
+    const playerInfo = gameState.players[0];
+    const playerBalance = playerInfo.balance;
+
+    expect(playerBalance).to.be.lessThan(12);
+
+    try {
+      await program.methods
+        .buildConstruction(2, 1, { gasPlant: {} })
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+      throw new Error("Expected error, but transaction succeeded");
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("NotEnoughFunds");
+    }
+  });
+
+  it("Successfully builds Gas Plant", async () => {
+    const player = provider.wallet.publicKey;
+    const gameData = { game_id: 0 };
+
+    const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    let gameState;
+    let playerBalance = 0;
+    do {
+      await program.methods
+        .endTurn()
+        .accounts({
+          game: gamePda,
+          player: player,
+        })
+        .rpc();
+
+      gameState = await program.account.game.fetch(gamePda);
+      const playerInfo = gameState.players[0];
+      playerBalance = playerInfo.balance;
+    } while (playerBalance < 12);
+
+    expect(playerBalance).to.be.greaterThanOrEqual(12);
+
+    await program.methods
+      .buildConstruction(2, 1, { gasPlant: {} })
+      .accounts({
+        game: gamePda,
+        player: player,
+      })
+      .rpc();
+
+    const updatedGameState = await program.account.game.fetch(gamePda);
+    const updatedPlayerInfo = updatedGameState.players[0];
+
+    expect(updatedPlayerInfo.balance).to.equal(playerBalance - 12);
+
+    const tile = updatedGameState.tiles[2][1];
+    expect(tile.building).to.not.be.null;
+    expect(tile.building.buildingType).to.deep.equal({ gasPlant: {} });
+  });
 });
