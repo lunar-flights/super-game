@@ -135,6 +135,18 @@ pub enum BuildingType {
     Fort,
 }
 
+impl BuildingType {
+    pub fn get_construction_cost(&self) -> u8 {
+        match self {
+            BuildingType::GasPlant => 12,
+            BuildingType::PlaneFactory => 12,
+            BuildingType::TankFactory => 12,
+            BuildingType::Fort => 12,
+            _ => 0,
+        }
+    }
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
 pub struct Building {
     pub building_type: BuildingType,
@@ -153,6 +165,27 @@ impl Building {
                 _ => 0,
             },
             BuildingType::GasPlant => 1,
+            _ => 0,
+        }
+    }
+
+    pub fn max_level(&self) -> u8 {
+        match self.building_type {
+            BuildingType::Base => 3,
+            BuildingType::GasPlant => 1,
+            BuildingType::TankFactory => 1,
+            BuildingType::PlaneFactory => 1,
+            BuildingType::Fort => 1,
+        }
+    }
+
+    pub fn get_upgrade_cost(&self) -> u8 {
+        match self.building_type {
+            BuildingType::Base => match self.level {
+                1 => 12,
+                2 => 22,
+                _ => 0,
+            },
             _ => 0,
         }
     }
