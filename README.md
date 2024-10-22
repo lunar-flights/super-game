@@ -1,5 +1,7 @@
 ### SUPER: chess meets StarCraft.
 
+Play: https://super.game
+
 > SUPER is a fully on-chain strategy game on Solana, developed by Lunar Flights.
 
 This is a on-chain program repository. The web frontend can be found here: https://github.com/lunar-flights/super-game-frontend
