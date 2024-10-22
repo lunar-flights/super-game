@@ -28,8 +28,8 @@ Each unit type has different costs, stamina, and strength. Mutants are neutral N
 | Unit Type  | Cost | Stamina | Strength | Description                               |
 |------------|------|---------|----------|-------------------------------------------|
 | Infantry   | 1    | 1       | 1        | Basic unit that can be acquired on any tile controlled by a player.|
-| Tank       | 3    | 3       | 3        | Advanced unit that can be purchased only in Tank Factory.|
-| Plane      | 5    | 5       | 4        | The only unit in game that can attack non adjacent tiles.|
+| Tank       | 3    | 3       | 3        | Advanced unit that can be purchased only in Tank Factory. Can attack diagonal tiles and move after attacks. |
+| Plane      | 5    | 5       | 4        | Advanced unit that can be purchased only in Plane Factory. Can attack diagonal tiles and move after attacks. |
 | Mutants    | 0    | 0       | 1        | Neutral units, same strength as infantry, cannot move.|
 
 ## Buildings
@@ -38,9 +38,9 @@ Buildings can either produce resources per turn or unlock advanced units for pro
 
 | Building Type     | Level | Yield per Turn | Unlocks / Description                   | Strength |
 |-------------------|-------|----------------|-----------------------------------------|----------|
-| Base              | 1     | 3              | Players are eliminated if their Base is destroyed.     | 12       |
-| Base              | 2     | 4              |                                         | 16       |
-| Base              | 3     | 6              |                                         | 24       |
+| Capital              | 1     | 3              | Players are eliminated if their Capital is destroyed.     | 12       |
+| Capital              | 2     | 4              |                                         | 16       |
+| Capital              | 3     | 6              |                                         | 24       |
 | Gas Plant         | -     | 1              | Generates extra resources per turn.     | -        |
 | Tank Factory      | -     | 0              | Unlocks the ability to produce tanks.    | -        |
 | Plane Factory     | -     | 0              | Unlocks the ability to produce planes.   | -        |
