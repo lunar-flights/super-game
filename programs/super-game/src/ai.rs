@@ -23,22 +23,32 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
         .ok_or(GameError::InvalidPlayer)?
         .pubkey;
 
-    let mut bot_tile_positions = Vec::new();
+    let mut bot_tiles = Vec::new();
 
     for (row_index, row) in game.tiles.iter().enumerate() {
         for (col_index, tile_option) in row.iter().enumerate() {
             if let Some(tile) = tile_option {
                 if tile.owner == bot_pubkey {
-                    bot_tile_positions.push((row_index, col_index));
+                    bot_tiles.push((row_index, col_index));
                 }
             }
         }
     }
 
-    attack_adjacent_tiles(game, bot_pubkey, &bot_tile_positions)?;
-    upgrade_base(game, bot_index, &bot_tile_positions)?;
-    build_constructions(game, bot_index, &bot_tile_positions)?;
-    recruit_units(game, bot_index, &bot_tile_positions)?;
+    let (total_units, base_level) = get_stats(game, &bot_tiles);
+
+    if (base_level == 1 && total_units >= 5) || (base_level == 2 && total_units >= 20) {
+        upgrade_base(game, bot_index, &bot_tiles)?;
+    } else if base_level >= 2
+        && total_units > 10
+        && !has_building(game, &bot_tiles, BuildingType::GasPlant)
+    {
+        build_constructions(game, bot_index, &bot_tiles)?;
+    } else {
+        recruit_units(game, bot_index, &bot_tiles)?;
+    }
+
+    attack_adjacent_tiles(game, bot_pubkey, &bot_tiles)?;
 
     Ok(())
 }
@@ -46,11 +56,11 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
 fn attack_adjacent_tiles(
     game: &mut Game,
     bot_pubkey: Pubkey,
-    bot_tile_positions: &[(usize, usize)],
+    bot_tiles: &[(usize, usize)],
 ) -> Result<()> {
     let mut pending_moves = Vec::new();
 
-    for &(row_index, col_index) in bot_tile_positions {
+    for &(row_index, col_index) in bot_tiles {
         let tile = &game.tiles[row_index][col_index];
         if let Some(tile) = tile {
             if let Some(units) = &tile.units {
@@ -233,18 +243,14 @@ fn handle_attack(
     Ok(base_destroyed_player)
 }
 
-fn recruit_units(
-    game: &mut Game,
-    bot_index: usize,
-    bot_tile_positions: &[(usize, usize)],
-) -> Result<()> {
+fn recruit_units(game: &mut Game, bot_index: usize, bot_tiles: &[(usize, usize)]) -> Result<()> {
     let bot = game.players[bot_index]
         .as_mut()
         .ok_or(GameError::InvalidPlayer)?;
 
     let infantry_cost = UnitType::Infantry.cost() as u32;
 
-    for &(row_index, col_index) in bot_tile_positions {
+    for &(row_index, col_index) in bot_tiles {
         let tile = game.tiles[row_index][col_index]
             .as_mut()
             .ok_or(GameError::InvalidTile)?;
@@ -285,11 +291,7 @@ fn recruit_units(
     Ok(())
 }
 
-fn upgrade_base(
-    game: &mut Game,
-    bot_index: usize,
-    tiles: &[(usize, usize)],
-) -> Result<()> {
+fn upgrade_base(game: &mut Game, bot_index: usize, tiles: &[(usize, usize)]) -> Result<()> {
     let bot = game.players[bot_index]
         .as_mut()
         .ok_or(GameError::InvalidPlayer)?;
@@ -321,7 +323,7 @@ fn upgrade_base(
 fn build_constructions(
     game: &mut Game,
     bot_index: usize,
-    bot_tile_positions: &[(usize, usize)],
+    bot_tiles: &[(usize, usize)],
 ) -> Result<()> {
     let bot = game.players[bot_index]
         .as_mut()
@@ -331,7 +333,7 @@ fn build_constructions(
 
     if bot.balance >= cost {
         let mut has_gas_plant = false;
-        for &(row_index, col_index) in bot_tile_positions {
+        for &(row_index, col_index) in bot_tiles {
             let tile = game.tiles[row_index][col_index]
                 .as_mut()
                 .ok_or(GameError::InvalidTile)?;
@@ -344,7 +346,7 @@ fn build_constructions(
         }
 
         if !has_gas_plant {
-            for &(row_index, col_index) in bot_tile_positions {
+            for &(row_index, col_index) in bot_tiles {
                 let tile = game.tiles[row_index][col_index]
                     .as_mut()
                     .ok_or(GameError::InvalidTile)?;
@@ -363,6 +365,42 @@ fn build_constructions(
     Ok(())
 }
 
+fn get_stats(game: &Game, bot_tiles: &[(usize, usize)]) -> (u16, u8) {
+    let mut total_units = 0;
+    let mut base_level = 0;
+
+    for &(row_index, col_index) in bot_tiles {
+        if let Some(tile) = &game.tiles[row_index][col_index] {
+            if let Some(units) = &tile.units {
+                total_units += units.quantity;
+            }
+            if let Some(building) = &tile.building {
+                if let BuildingType::Base = building.building_type {
+                    base_level = building.level;
+                }
+            }
+        }
+    }
+
+    (total_units, base_level)
+}
+
+fn has_building(
+    game: &Game,
+    bot_tile_positions: &[(usize, usize)],
+    building_type: BuildingType,
+) -> bool {
+    for &(row_index, col_index) in bot_tile_positions {
+        if let Some(tile) = &game.tiles[row_index][col_index] {
+            if let Some(building) = &tile.building {
+                if building.building_type == building_type {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
 
 fn get_adjacent_tiles(row: usize, col: usize, game: &Game) -> Vec<(usize, usize)> {
     let mut positions = Vec::new();
