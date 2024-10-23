@@ -9,7 +9,7 @@ struct MoveAction {
     to_col: usize,
 }
 
-const DESIRED_UNIT_QUANTITY: u16 = 9;
+const DESIRED_UNIT_QUANTITY: u16 = 30;
 
 /* Bots make decisions in the following order:
     1. Attack adjacent tiles if possible
@@ -36,7 +36,8 @@ pub fn process_bot_turn(game: &mut Game, bot_index: usize) -> Result<()> {
     }
 
     attack_adjacent_tiles(game, bot_pubkey, &bot_tile_positions)?;
-
+    upgrade_base(game, bot_index, &bot_tile_positions)?;
+    build_constructions(game, bot_index, &bot_tile_positions)?;
     recruit_units(game, bot_index, &bot_tile_positions)?;
 
     Ok(())
@@ -283,6 +284,85 @@ fn recruit_units(
     }
     Ok(())
 }
+
+fn upgrade_base(
+    game: &mut Game,
+    bot_index: usize,
+    tiles: &[(usize, usize)],
+) -> Result<()> {
+    let bot = game.players[bot_index]
+        .as_mut()
+        .ok_or(GameError::InvalidPlayer)?;
+
+    let base_upgrade_costs = [0, 12, 22];
+    let max_base_level = 3;
+
+    for &(row_index, col_index) in tiles {
+        let tile = game.tiles[row_index][col_index]
+            .as_mut()
+            .ok_or(GameError::InvalidTile)?;
+
+        if let Some(building) = &mut tile.building {
+            if let BuildingType::Base = building.building_type {
+                if building.level < max_base_level {
+                    let upgrade_cost = base_upgrade_costs[building.level as usize];
+                    if bot.balance >= upgrade_cost {
+                        bot.balance -= upgrade_cost;
+                        building.level += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn build_constructions(
+    game: &mut Game,
+    bot_index: usize,
+    bot_tile_positions: &[(usize, usize)],
+) -> Result<()> {
+    let bot = game.players[bot_index]
+        .as_mut()
+        .ok_or(GameError::InvalidPlayer)?;
+
+    let cost = 12;
+
+    if bot.balance >= cost {
+        let mut has_gas_plant = false;
+        for &(row_index, col_index) in bot_tile_positions {
+            let tile = game.tiles[row_index][col_index]
+                .as_mut()
+                .ok_or(GameError::InvalidTile)?;
+            if let Some(building) = &tile.building {
+                if let BuildingType::GasPlant = building.building_type {
+                    has_gas_plant = true;
+                    break;
+                }
+            }
+        }
+
+        if !has_gas_plant {
+            for &(row_index, col_index) in bot_tile_positions {
+                let tile = game.tiles[row_index][col_index]
+                    .as_mut()
+                    .ok_or(GameError::InvalidTile)?;
+                if tile.building.is_none() {
+                    tile.building = Some(Building {
+                        building_type: BuildingType::GasPlant,
+                        level: 1,
+                    });
+                    bot.balance -= cost;
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 
 fn get_adjacent_tiles(row: usize, col: usize, game: &Game) -> Vec<(usize, usize)> {
     let mut positions = Vec::new();

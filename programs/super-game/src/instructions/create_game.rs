@@ -45,7 +45,9 @@ pub fn create_game(
     let creator_profile = &mut ctx.accounts.creator_profile;
 
     if creator_profile.active_games.len() >= PlayerProfile::MAX_ACTIVE_GAMES {
-        return err!(GameError::TooManyActiveGames);
+        // TODO: remove this once frontend will allow to manage all active games
+        creator_profile.active_games.remove(0);
+        // return err!(GameError::TooManyActiveGames);
     }
     creator_profile.active_games.push(game.key());
 
