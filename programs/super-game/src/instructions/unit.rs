@@ -227,8 +227,8 @@ fn handle_enemy_tile_attack(
             if let Some(building) = &to_tile.building {
                 if let BuildingType::Base = building.building_type {
                     update_player_status(game, to_tile.owner, false);
+                    to_tile.building = None;
                 }
-                to_tile.building = None;
             }
         }
         std::cmp::Ordering::Less => {
