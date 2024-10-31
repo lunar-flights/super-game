@@ -34,6 +34,25 @@ pub struct CreateGame<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct JoinGame<'info> {
+    #[account(mut)]
+    pub game: Account<'info, Game>,
+
+    #[account(mut)]
+    pub player: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"PROFILE", player.key().as_ref()],
+        bump,
+        has_one = player
+    )]
+    pub player_profile: Account<'info, PlayerProfile>,
+
+    pub system_program: Program<'info, System>,
+}
+
 pub fn create_game(
     ctx: Context<CreateGame>,
     max_players: u8,
@@ -112,7 +131,73 @@ pub fn create_game(
         player_infos.push(bot_info);
     }
 
-    game.tiles = initialize_tiles(&game.key(), &player_infos, &game.map_size)?;
+    if !is_multiplayer {
+        game.tiles = initialize_tiles(&game.key(), &player_infos, &game.map_size)?;
+    }
+
+    Ok(())
+}
+
+pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
+    let game = &mut ctx.accounts.game;
+    let player = &ctx.accounts.player;
+    let player_profile = &mut ctx.accounts.player_profile;
+
+    if game.status != GameStatus::NotStarted {
+        return err!(GameError::GameAlreadyStarted);
+    }
+
+    let already_joined = game.players.iter().any(|player_info_option| {
+        if let Some(player_info) = player_info_option {
+            player_info.pubkey == player.key()
+        } else {
+            false
+        }
+    });
+
+    if already_joined {
+        return err!(GameError::PlayerAlreadyInGame);
+    }
+
+    let num_players = game.players.iter().filter(|p| p.is_some()).count();
+    if num_players >= game.max_players as usize {
+        return err!(GameError::GameIsFull);
+    }
+
+    if player_profile.active_games.len() >= PlayerProfile::MAX_ACTIVE_GAMES {
+        // TODO: fix me. Remove the oldest game if player got 10 active games
+        player_profile.active_games.remove(0);
+    }
+    player_profile.active_games.push(game.key());
+
+    // Find the next available slot in the players array
+    let mut added = false;
+    for player_slot in game.players.iter_mut() {
+        if player_slot.is_none() {
+            *player_slot = Some(PlayerInfo {
+                pubkey: player.key(),
+                is_bot: false,
+                balance: 2,
+                attack_points: 1,
+                is_alive: true,
+            });
+            added = true;
+            break;
+        }
+    }
+
+    if !added {
+        return err!(GameError::GameIsFull);
+    }
+
+    // start the game if the number of players is now equal to max_players
+    let num_players = game.players.iter().filter(|p| p.is_some()).count();
+    if num_players == game.max_players as usize {
+        game.status = GameStatus::Live;
+
+        let player_infos: Vec<PlayerInfo> = game.players.iter().filter_map(|p| *p).collect();
+        game.tiles = initialize_tiles(&game.key(), &player_infos, &game.map_size)?;
+    }
 
     Ok(())
 }

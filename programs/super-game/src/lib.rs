@@ -33,6 +33,10 @@ pub mod super_game {
         instructions::create_game::create_game(ctx, max_players, is_multiplayer, map_size)
     }
 
+    pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
+        instructions::create_game::join_game(ctx)
+    }
+
     pub fn move_unit(
         ctx: Context<MoveUnit>,
         from_row: u8,
