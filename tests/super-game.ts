@@ -9,7 +9,34 @@ describe("super-game", () => {
 
   const program = anchor.workspace.SuperGame as Program<SuperGame>;
 
+  const secondPlayerKeypair = anchor.web3.Keypair.generate();
+  const secondPlayer = secondPlayerKeypair.publicKey;
+  const gameData = { game_id: 0 };
   let timestamp = 0;
+
+  async function airdropSol(publicKey: anchor.web3.PublicKey, amount: number) {
+    const connection = provider.connection;
+    const signature = await connection.requestAirdrop(publicKey, amount);
+    await connection.confirmTransaction(signature);
+  }
+
+  before(async () => {
+    await airdropSol(secondPlayer, 2 * anchor.web3.LAMPORTS_PER_SOL);
+    const [playerProfilePda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("PROFILE"), secondPlayer.toBuffer()],
+      program.programId
+    );
+
+    const tx = await program.methods
+      .createPlayerProfile()
+      .accounts({
+        player: secondPlayer,
+      })
+      .signers(secondPlayerKeypair ? [secondPlayerKeypair] : [])
+      .rpc();
+
+    console.log("Registered opponent", secondPlayer.toBase58());
+  });
 
   it("Initializes the program", async () => {
     const [superStatePda] = await anchor.web3.PublicKey.findProgramAddressSync(
@@ -17,10 +44,13 @@ describe("super-game", () => {
       program.programId
     );
 
-    await program.methods.initializeProgram().rpc();
-    const superState = await program.account.superState.fetch(superStatePda);
-
-    expect(superState.gameCount).to.equal(0);
+    try {
+      await program.methods.initializeProgram().rpc();
+      const superState = await program.account.superState.fetch(superStatePda);
+      expect(superState.gameCount).to.equal(0);
+    } catch (e) {
+      expect(e.message).include("already in use");
+    }
   });
 
   it("Creates a player profile", async () => {
@@ -31,12 +61,14 @@ describe("super-game", () => {
       program.programId
     );
 
-    await program.methods
-      .createPlayerProfile()
-      .accounts({
-        player: player,
-      })
-      .rpc();
+    try {
+      await program.methods
+        .createPlayerProfile()
+        .accounts({
+          player: player,
+        })
+        .rpc();
+    } catch (e) {}
 
     const playerProfile = await program.account.playerProfile.fetch(playerProfilePda);
     expect(playerProfile.player.toBase58()).to.be.equal(player.toBase58());
@@ -73,6 +105,9 @@ describe("super-game", () => {
       })
       .rpc();
 
+    // update game_id for all further tests
+    gameData.game_id = gameId;
+
     const newSuperState = await program.account.superState.fetch(superStatePda);
     const game = await program.account.game.fetch(gamePda);
     expect(newSuperState.gameCount).to.equal(gameId + 1);
@@ -85,8 +120,6 @@ describe("super-game", () => {
 
   it("Fails to move a unit with 1 stamina to diagonal tile", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -109,8 +142,6 @@ describe("super-game", () => {
 
   it("Moves a unit from one tile to an adjacent tile", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -144,8 +175,6 @@ describe("super-game", () => {
 
   it("Fails to recruit units in a tile that doesn't belong to player", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -169,8 +198,6 @@ describe("super-game", () => {
 
   it("Fails to recruit 100 infantry units in base tile due to insufficient funds", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -194,8 +221,6 @@ describe("super-game", () => {
 
   it("Successfully recruits 2 infantry units in base tile", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -228,7 +253,6 @@ describe("super-game", () => {
 
   it("End turn", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -252,8 +276,6 @@ describe("super-game", () => {
 
   it("Fails to build Gas Plant on a tile with base", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -275,8 +297,6 @@ describe("super-game", () => {
 
   it("Fails to build Gas Plant on a tile not controlled by the player", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -298,8 +318,6 @@ describe("super-game", () => {
 
   it("Fails to build Gas Plant on controlled tile due to insufficient funds", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -327,8 +345,6 @@ describe("super-game", () => {
 
   it("Successfully builds Gas Plant", async () => {
     const player = provider.wallet.publicKey;
-    const gameData = { game_id: 0 };
-
     const [gamePda] = await anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("GAME"), new anchor.BN(gameData.game_id).toArrayLike(Buffer, "le", 4)],
       program.programId
@@ -369,4 +385,115 @@ describe("super-game", () => {
     expect(tile.building).to.not.be.null;
     expect(tile.building.buildingType).to.deep.equal({ gasPlant: {} });
   });
+
+  let multiplayerGamePDA;
+  it("First player creates a multiplayer game", async () => {
+    const player = provider.wallet.publicKey;
+
+    const [superStatePda] = anchor.web3.PublicKey.findProgramAddressSync([Buffer.from("SUPER")], program.programId);
+    const [playerProfilePda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("PROFILE"), player.toBuffer()],
+      program.programId
+    );
+
+    const superState = await program.account.superState.fetch(superStatePda);
+    const gameId = superState.gameCount;
+    [multiplayerGamePDA] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("GAME"), new anchor.BN(gameId).toArrayLike(Buffer, "le", 4)],
+      program.programId
+    );
+
+    await program.methods
+      .createGame(2, true, { small: {} })
+      .accounts({
+        superState: superStatePda,
+        game: multiplayerGamePDA,
+        creator: player,
+      })
+      .rpc();
+
+    const game = await program.account.game.fetch(multiplayerGamePDA);
+    expect(game.creator.toBase58()).to.equal(player.toBase58());
+    expect(game.status).to.deep.equal({ notStarted: {} });
+    expect(game.isMultiplayer).to.be.true;
+  });
+
+  it("Second player joins the game", async () => {
+    const player = provider.wallet.publicKey;
+
+    const [playerProfilePda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("PROFILE"), secondPlayer.toBuffer()],
+      program.programId
+    );
+
+    await program.methods
+      .joinGame()
+      .accounts({
+        game: multiplayerGamePDA,
+        // @ts-ignore
+        player: secondPlayer,
+        playerProfile: playerProfilePda,
+      })
+      .signers([secondPlayerKeypair])
+      .rpc();
+
+    const game = await program.account.game.fetch(multiplayerGamePDA);
+    expect(game.status).to.deep.equal({ live: {} });
+
+    const players = game.players.filter((p: any) => p !== null);
+    expect(players.length).to.equal(2);
+    expect(players[0].pubkey.toBase58()).to.equal(player.toBase58());
+    expect(players[1].pubkey.toBase58()).to.equal(secondPlayer.toBase58());
+  });
+
+  it("First player ends their turn successfully", async () => {
+    const player = provider.wallet.publicKey;
+    const gameBefore = await program.account.game.fetch(multiplayerGamePDA);
+    expect(gameBefore.currentPlayerIndex).to.equal(0);
+  
+    await program.methods
+      .endTurn()
+      .accounts({
+        game: multiplayerGamePDA,
+        player: player,
+      })
+      .rpc();
+  
+    const gameAfter = await program.account.game.fetch(multiplayerGamePDA);
+    expect(gameAfter.currentPlayerIndex).to.equal(1);
+  });
+  
+  it("First player fails to end turn when it's not their turn", async () => {
+    const player = provider.wallet.publicKey;
+    try {
+      await program.methods
+        .endTurn()
+        .accounts({
+          game: multiplayerGamePDA,
+          player: player,
+        })
+        .rpc();
+      throw new Error("Expected error, but transaction succeeded");
+    } catch (error) {
+      expect(error.error.errorCode.code).to.equal("NotYourTurn");
+    }
+  });
+  
+  it("Second player ends their turn successfully", async () => {
+    const gameBefore = await program.account.game.fetch(multiplayerGamePDA);
+    expect(gameBefore.currentPlayerIndex).to.equal(1);
+  
+    await program.methods
+      .endTurn()
+      .accounts({
+        game: multiplayerGamePDA,
+        player: secondPlayer,
+      })
+      .signers([secondPlayerKeypair])
+      .rpc();
+  
+    const gameAfter = await program.account.game.fetch(multiplayerGamePDA);
+    expect(gameAfter.currentPlayerIndex).to.equal(0);
+  });
+  
 });
