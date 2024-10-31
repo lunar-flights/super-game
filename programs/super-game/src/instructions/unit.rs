@@ -41,11 +41,25 @@ pub fn move_unit(
     }
 
     if to_tile.owner == player_pubkey {
-        // Move to a friendly tile
-        handle_friendly_tile_movement(from_units, &mut from_tile, &mut to_tile, move_cost)?;
+        handle_move(from_units, &mut from_tile, &mut to_tile, move_cost)?;
     } else {
-        // Attack enemy or neutral tile
-        handle_enemy_tile_attack(
+        let player_index = game
+            .players
+            .iter()
+            .position(|p| {
+                if let Some(player_info) = p {
+                    player_info.pubkey == player_pubkey
+                } else {
+                    false
+                }
+            })
+            .ok_or(GameError::InvalidPlayer)?;
+
+        if player_index != game.current_player_index as usize {
+            return err!(GameError::NotYourTurn);
+        }
+
+        handle_attack(
             game,
             from_units,
             &mut from_tile,
@@ -142,7 +156,7 @@ fn is_valid_move(from_row: usize, from_col: usize, to_row: usize, to_col: usize)
     row_diff <= 1 && col_diff <= 1
 }
 
-fn handle_friendly_tile_movement(
+fn handle_move(
     from_units: Units,
     from_tile: &mut Tile,
     to_tile: &mut Tile,
@@ -186,7 +200,7 @@ fn handle_friendly_tile_movement(
     Ok(())
 }
 
-fn handle_enemy_tile_attack(
+fn handle_attack(
     game: &mut Game,
     from_units: Units,
     from_tile: &mut Tile,
