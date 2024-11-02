@@ -5,6 +5,7 @@ use anchor_lang::prelude::*;
 
 const MAX_PLAYERS: usize = Game::MAX_PLAYERS;
 const MAX_ATTACK_POINTS: u8 = Game::MAX_ATTACK_POINTS;
+const MAX_TURN_DURATION: u64 = 60;
 
 #[derive(Accounts)]
 pub struct EndTurn<'info> {
@@ -23,7 +24,9 @@ pub fn end_turn(ctx: Context<EndTurn>) -> Result<()> {
         .as_ref()
         .ok_or(GameError::InvalidPlayer)?;
 
-    if current_player_info.pubkey != player_pubkey {
+    let time_elapsed = current_timestamp.saturating_sub(game.turn_timestamp);
+
+    if current_player_info.pubkey != player_pubkey && time_elapsed < MAX_TURN_DURATION {
         return err!(GameError::NotYourTurn);
     }
 
